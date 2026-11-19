@@ -1,0 +1,45 @@
+# Snake Arena 3D
+# Starten:   docker compose up -d --build
+# Stoppen:   docker compose down
+# Logs:      docker compose logs -f snake
+
+services:
+  snake:
+    build: .
+    image: snake-arena-3d:latest
+    container_name: snake-arena-3d
+    restart: unless-stopped
+    ports:
+      - "8080:8080"          # links: Port auf deinem Server, rechts: Port im Container
+    environment:
+      PORT: "8080"
+      # Unterpfad, unter dem das Spiel erreichbar ist (siehe ANLEITUNG.md, Schritt 5).
+      # "/" = eigene (Sub-)Domain. "/snake" = z. B. zehnkronen.com/snake (Proxy ohne Strip Prefix).
+      BASE_PATH: "/"
+      # Eigener TURN-Server (optional, siehe ANLEITUNG.md, Abschnitt TURN):
+      # TURN_URL: "turn:deine-domain.de:3478"
+      # TURN_USER: "snake"
+      # TURN_PASS: "ein-langes-passwort"
+      # Öffentlichen PeerJS-TURN abschalten (nur sinnvoll mit eigenem TURN):
+      # PUBLIC_TURN: "0"
+
+  # Optional: eigener TURN-Server für Spieler hinter strengem Mobilfunk-NAT.
+  # Start nur mit:  docker compose --profile turn up -d
+  coturn:
+    image: coturn/coturn:latest
+    profiles: ["turn"]
+    container_name: snake-coturn
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - "-n"
+      - "--listening-port=3478"
+      - "--fingerprint"
+      - "--lt-cred-mech"
+      - "--user=snake:ein-langes-passwort"
+      - "--realm=snake-arena"
+      - "--min-port=49160"
+      - "--max-port=49200"
+      - "--no-cli"
+      - "--no-tls"
+      - "--no-dtls"

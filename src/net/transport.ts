@@ -1,12 +1,28 @@
 import Peer, { DataConnection, PeerOptions } from "peerjs";
 import { PEER_PREFIX } from "./protocol";
 
-// Verbindungsaufbau über PeerJS (WebRTC). Standard: öffentlicher PeerJS-Server inkl. STUN/TURN.
-// Eigener Signaling-Server: ?signal=host:port[/pfad]  (z. B. ?signal=localhost:9000)
+// Verbindungsaufbau über PeerJS (WebRTC).
+// 1) Läuft das Spiel auf dem eigenen Docker-Server, liefert dieser ./server-config.json:
+//    dann vermittelt der eigene Server (Pfad ./peerjs/) und seine STUN/TURN-Liste gilt.
+// 2) Sonst (z. B. GitHub Pages): öffentlicher PeerJS-Server inkl. STUN/TURN.
+// 3) Test: ?signal=host:port[/pfad]  (z. B. ?signal=localhost:9000)
 
-export function peerOptions(): PeerOptions {
-  const sig = new URLSearchParams(location.search).get("signal");
+interface ServerConfig {
+  signal?: boolean;
+  iceServers?: RTCIceServer[];
+}
+
+let serverConfig: Promise<ServerConfig | null> | null = null;
+function loadServerConfig(): Promise<ServerConfig | null> {
+  serverConfig ??= fetch("./server-config.json", { cache: "no-store" })
+    .then((r) => (r.ok ? (r.json() as Promise<ServerConfig>) : null))
+    .catch(() => null);
+  return serverConfig;
+}
+
+export async function peerOptions(): Promise<PeerOptions> {
   const opts: PeerOptions = { debug: 1 };
+  const sig = new URLSearchParams(location.search).get("signal");
   if (sig) {
     const m = sig.match(/^([^:/]+)(?::(\d+))?(\/.*)?$/);
     if (m) {
@@ -17,6 +33,17 @@ export function peerOptions(): PeerOptions {
       // lokal: nur direkte Verbindungen
       opts.config = { iceServers: [] };
     }
+    return opts;
+  }
+  const cfg = await loadServerConfig();
+  if (cfg?.signal) {
+    const secure = location.protocol === "https:";
+    opts.host = location.hostname;
+    opts.port = location.port ? Number(location.port) : secure ? 443 : 80;
+    opts.secure = secure;
+    // relativ zur Seite, damit es auch unter einem Unterpfad (z. B. /snake/) läuft
+    opts.path = new URL("./peerjs/", location.href).pathname;
+    if (cfg.iceServers?.length) opts.config = { iceServers: cfg.iceServers };
   }
   return opts;
 }
@@ -43,13 +70,14 @@ export class HostNet {
   onFast: (peerId: string, data: ArrayBuffer) => void = () => {};
   onError: (msg: string) => void = () => {};
 
-  open(code: string): Promise<void> {
+  async open(code: string): Promise<void> {
+    const options = await peerOptions();
     return new Promise((resolve, reject) => {
       if (typeof RTCPeerConnection === "undefined") {
         reject({ type: "webrtc" });
         return;
       }
-      this.peer = new Peer(PEER_PREFIX + code, peerOptions());
+      this.peer = new Peer(PEER_PREFIX + code, options);
       let opened = false;
       setTimeout(() => {
         if (!opened) {
@@ -113,13 +141,14 @@ export class ClientNet {
   onClose: (reason: string) => void = () => {};
   private closed = false;
 
-  connect(code: string): Promise<void> {
+  async connect(code: string): Promise<void> {
+    const options = await peerOptions();
     return new Promise((resolve, reject) => {
       if (typeof RTCPeerConnection === "undefined") {
         reject(new Error("webrtc"));
         return;
       }
-      this.peer = new Peer(peerOptions());
+      this.peer = new Peer(options);
       let done = false;
       const fail = (why: string) => {
         if (!done) {

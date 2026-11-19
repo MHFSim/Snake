@@ -28,6 +28,10 @@ Orbs fressen macht länger. Wer mit dem Kopf gegen einen fremden Körper fährt,
 - **Rekorde:** beste Länge und Kills bleiben auf dem Gerät gespeichert.
 - **Ton** komplett per WebAudio, im Menü abschaltbar.
 
+## Eigener Server (Docker)
+
+`docker compose up -d --build` startet Spiel und Mehrspieler-Vermittlung auf Port 8080. Die genaue Anleitung (Coolify, Reverse Proxy, Unterpfad, TURN) steht in **[ANLEITUNG.md](ANLEITUNG.md)**.
+
 ## Starten (Entwicklung)
 
 ```bash

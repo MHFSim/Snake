@@ -1,0 +1,15 @@
+{
+  "name": "snake-arena-3d-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Liefert Snake Arena 3D aus und vermittelt die Mehrspieler-Verbindungen (PeerJS)",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "peer": "^1.0.2"
+  }
+}
