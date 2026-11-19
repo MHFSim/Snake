@@ -98,13 +98,23 @@ describe("World", () => {
     expect(a.alive).toBe(true);
   });
 
+  it("wächst pro Punkt um ein Segment", () => {
+    const w = new World(11);
+    const s = w.addPlayer(0, "A", 0);
+    s.score = 25;
+    expect(s.length).toBe(CFG.startLength + 25);
+  });
+
   it("Boost kostet Punkte", () => {
     const w = new World(7);
     const s = w.addPlayer(0, "A", 0);
     s.score = 50;
+    // keine Orbs, damit nur der Boost zählt
+    for (const o of [...w.orbs.values()]) (w as any).removeOrb(o, -1);
+    (w as any).spawnRandomOrb = () => {};
     w.setInput(0, { angle: s.angle, boost: true });
     for (let i = 0; i < CFG.tickRate; i++) w.step(DT);
-    expect(s.score).toBeLessThan(50);
+    expect(s.score).toBe(50 - CFG.boostDrainPerSec);
   });
 
   it("Spieler, der geht, wird zu Orbs", () => {

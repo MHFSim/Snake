@@ -169,11 +169,12 @@ export class World {
     // Körper zerfällt in Orbs
     const n = s.bodyCount;
     const step = Math.max(2, Math.ceil(n / 220));
-    const value = CFG.deathOrbValue * (step / 2);
+    const count = Math.ceil(n / step);
+    const value = Math.max(1, Math.round((s.length * CFG.deathShare) / Math.max(1, count)));
     for (let k = 0; k < n; k += step) {
       const x = s.body[k * 3] + this.rng.range(-0.6, 0.6);
       const z = s.body[k * 3 + 2] + this.rng.range(-0.6, 0.6);
-      this.addOrb(x, z, Math.round(value), (s.color * 45 + this.rng.range(-15, 15) + 360) % 360);
+      this.addOrb(x, z, value, (s.color * 45 + this.rng.range(-15, 15) + 360) % 360);
     }
     s.best = Math.max(s.best, s.score);
     this.events.push({ t: "die", id: s.id, cause });
@@ -255,7 +256,7 @@ export class World {
       // Boost kostet Länge
       if (s.boosting && s.power.turbo <= 0) {
         s.drainAcc += CFG.boostDrainPerSec * dt;
-        const d = Math.floor(s.drainAcc);
+        const d = Math.floor(s.drainAcc + 1e-9);
         if (d > 0) {
           s.score = Math.max(0, s.score - d);
           s.drainAcc -= d;
@@ -264,7 +265,7 @@ export class World {
         if (s.dropAcc >= CFG.boostDropInterval && s.bodyCount > 0) {
           s.dropAcc = 0;
           const t = (s.bodyCount - 1) * 3;
-          this.addOrb(s.body[t], s.body[t + 2], 2, (s.color * 45 + 360) % 360);
+          this.addOrb(s.body[t], s.body[t + 2], CFG.boostDropValue, (s.color * 45 + 360) % 360);
         }
       }
 

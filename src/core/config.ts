@@ -8,15 +8,16 @@ export const CFG = {
   boostSpeed: 14,
   turnRate: Math.PI, // 180 °/s
   startLength: 10,
-  pointsPerSegment: 5,
+  pointsPerSegment: 1, // jeder Punkt = 1 Segment (5x schnelleres Wachstum)
   segmentSpacing: 0.6,
-  minBoostScore: 10,
-  boostDrainPerSec: 10, // 1 Segment pro 0,5 s
-  boostDropInterval: 0.25,
+  minBoostScore: 2,
+  boostDrainPerSec: 2, // 1 Segment pro 0,5 s
+  boostDropInterval: 0.5,
+  boostDropValue: 1,
 
   orbTarget: 1500,
   orbSmallValue: 1,
-  deathOrbValue: 3,
+  deathShare: 0.5, // tote Schlange wird zu Orbs im Wert ihrer halben Länge
   maxPowerUps: 6,
   powerUpInterval: 8,
   respawnDelay: 3,
@@ -27,7 +28,7 @@ export const CFG = {
 
   snapshotRate: 15,
   interpDelayMs: 100,
-  protocolVersion: 1,
+  protocolVersion: 2,
 } as const;
 
 export const HALF = CFG.mapSize / 2;
