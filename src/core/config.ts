@@ -42,7 +42,18 @@ export const CFG = {
 
   snapshotRate: 15,
   interpDelayMs: 100,
-  protocolVersion: 4,
+  // Sprung: über andere Schlangen hinweg
+  jumpDuration: 0.85,
+  jumpCooldown: 5,
+  jumpHeight: 3.4,
+
+  // Orb-Regen (Meteore)
+  meteorFirst: 70,
+  meteorInterval: 110,
+  meteorOrbs: 70,
+  meteorRadius: 22,
+
+  protocolVersion: 5,
 } as const;
 
 export const HALF = CFG.mapSize / 2;

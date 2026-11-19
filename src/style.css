@@ -178,7 +178,7 @@ h2 { margin: 0 0 12px; }
 }
 
 /* Emotes */
-#emotes { position: absolute; right: calc(126px + var(--sar)); bottom: calc(26px + var(--sab)); display: flex; align-items: center; gap: 8px; pointer-events: auto; }
+#emotes { position: absolute; right: calc(210px + var(--sar)); bottom: calc(26px + var(--sab)); display: flex; align-items: center; gap: 8px; pointer-events: auto; }
 #emoteBtn { width: 48px; height: 48px; border-radius: 50%; font-size: 24px; background: var(--glass); border: 1px solid var(--line); }
 #emoteRow { display: flex; gap: 6px; padding: 6px; border-radius: 30px; background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 #emoteRow button { width: 44px; height: 44px; border-radius: 50%; font-size: 24px; background: rgba(255,255,255,.08); }
@@ -196,3 +196,15 @@ h2 { margin: 0 0 12px; }
 /* iOS: kein Markieren, keine Lupe, kein Kontextmenü bei langem Drücken */
 #boostBtn, #boostBtn *, #touch, #hud, #emoteBtn { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 #boostBtn span { pointer-events: none; }
+
+/* Sprung-Knopf über dem Boost */
+#jumpBtn {
+  position: absolute; right: calc(126px + var(--sar)); bottom: calc(26px + var(--sab)); pointer-events: auto;
+  width: 72px; height: 72px; border-radius: 50%; touch-action: none; font-weight: 800; font-size: 11px; letter-spacing: .06em;
+  background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.35), rgba(60,200,255,.25) 45%, rgba(30,110,255,.35));
+  border: 2px solid rgba(140,210,255,.75); box-shadow: 0 0 20px rgba(60,160,255,.35);
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+}
+#jumpBtn span { pointer-events: none; }
+#jumpBtn.cd { opacity: .35; filter: grayscale(.8); box-shadow: none; }
+@media (max-height: 430px) { #jumpBtn { width: 64px; height: 64px; right: calc(112px + var(--sar)); } }

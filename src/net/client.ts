@@ -24,7 +24,7 @@ export class ClientSession implements Session {
   private net = new ClientNet();
   private snaps: Snapshot[] = [];
   private tickOffset = NaN; // geschätzter Server-Tick = now*rate/1000 + tickOffset
-  private input = { angle: 0, boost: false };
+  private input = { angle: 0, boost: false, jump: false };
   private seq = 0;
   private pending: InputRec[] = [];
   private pred: HeadState = { x: 0, z: 0, angle: 0 };
@@ -121,9 +121,10 @@ export class ClientSession implements Session {
     }, 1000);
   }
 
-  setInput(angle: number, boost: boolean) {
+  setInput(angle: number, boost: boolean, jump = false) {
     this.input.angle = angle;
     this.input.boost = boost;
+    this.input.jump = jump;
   }
 
   sendEmote(k: number) {
@@ -246,7 +247,7 @@ export class ClientSession implements Session {
 
   private clientTick() {
     this.seq++;
-    const rec: InputRec = { seq: this.seq, angle: this.input.angle, boost: this.input.boost };
+    const rec: InputRec = { seq: this.seq, angle: this.input.angle, boost: this.input.boost, jump: this.input.jump };
     this.pending.push(rec);
     if (this.pending.length > 90) this.pending.shift();
     if (this.predValid) {

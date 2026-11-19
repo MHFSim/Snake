@@ -61,6 +61,7 @@ export const F_MAGNET = 32;
 export const F_TURBO = 64;
 export const F_FAST = 128; // auf einem Boost-Pad
 export const F_DOUBLE = 256;
+export const F_AIR = 512; // im Sprung
 
 const POS = 50; // 1/50 m
 const ANG = 10000;
@@ -69,6 +70,7 @@ export interface InputRec {
   seq: number;
   angle: number;
   boost: boolean;
+  jump?: boolean;
 }
 
 export function encodeInputs(list: InputRec[]): ArrayBuffer {
@@ -80,7 +82,7 @@ export function encodeInputs(list: InputRec[]): ArrayBuffer {
   for (const r of list) {
     dv.setUint32(o, r.seq);
     dv.setInt16(o + 4, Math.round(r.angle * ANG));
-    dv.setUint8(o + 6, r.boost ? 1 : 0);
+    dv.setUint8(o + 6, (r.boost ? 1 : 0) | (r.jump ? 2 : 0));
     o += 7;
   }
   return buf;
@@ -92,7 +94,7 @@ export function decodeInputs(buf: ArrayBuffer): InputRec[] {
   const res: InputRec[] = [];
   let o = 2;
   for (let i = 0; i < n && o + 7 <= buf.byteLength; i++) {
-    res.push({ seq: dv.getUint32(o), angle: dv.getInt16(o + 4) / ANG, boost: dv.getUint8(o + 6) === 1 });
+    res.push({ seq: dv.getUint32(o), angle: dv.getInt16(o + 4) / ANG, boost: (dv.getUint8(o + 6) & 1) !== 0, jump: (dv.getUint8(o + 6) & 2) !== 0 });
     o += 7;
   }
   return res;

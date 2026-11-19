@@ -38,7 +38,7 @@ export interface Session {
   // Darstellungszustand aller Schlangen (interpoliert bzw. vorhergesagt)
   readonly snakes: Map<number, RSnake>;
   ping: number;
-  setInput(angle: number, boost: boolean): void;
+  setInput(angle: number, boost: boolean, jump?: boolean): void;
   sendEmote(k: number): void;
   // Wird jeden Frame aufgerufen; aktualisiert snakes
   update(nowMs: number): void;

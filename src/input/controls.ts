@@ -16,7 +16,15 @@ export class Controls {
     private base: HTMLElement,
     private knob: HTMLElement,
     boostBtn: HTMLElement,
+    jumpBtn?: HTMLElement,
   ) {
+    if (jumpBtn) {
+      // Antippen merkt sich den Sprung kurz, damit er sicher beim Spiel ankommt
+      const latch = () => (this.jumpUntil = performance.now() + 250);
+      jumpBtn.addEventListener("touchstart", (e) => { e.preventDefault(); latch(); }, { passive: false });
+      jumpBtn.addEventListener("pointerdown", (e) => { if (e.pointerType !== "touch") latch(); });
+      jumpBtn.addEventListener("contextmenu", (e) => e.preventDefault());
+    }
     area.addEventListener("pointerdown", (e) => this.down(e));
     area.addEventListener("pointermove", (e) => this.move(e));
     area.addEventListener("pointerup", (e) => this.up(e));
@@ -137,6 +145,11 @@ export class Controls {
       return camYaw + Math.atan2(this.dx, -this.dy);
     }
     return current;
+  }
+
+  private jumpUntil = 0;
+  isJump(): boolean {
+    return performance.now() < this.jumpUntil || this.keys.has("KeyE") || this.keys.has("KeyS") || this.keys.has("ArrowDown");
   }
 
   isBoost(): boolean {

@@ -1,9 +1,38 @@
-import { EMOTES, HALF, SNAKE_COLORS, lengthFromScore } from "../core/config";
+import { CFG, EMOTES, HALF, SNAKE_COLORS, lengthFromScore } from "../core/config";
 import { F_DOUBLE, F_FAST, F_GHOST, F_MAGNET, F_SHIELD, F_TURBO } from "../net/protocol";
 import type { PlayerInfo } from "../net/protocol";
 import type { Session } from "../net/session";
 import type { SimEvent } from "../sim/world";
 import type { GameRenderer } from "../render/renderer";
+
+// Rekorde bleiben auf dem Gerät gespeichert
+export function readStats(): { best: number; kills: number } {
+  try {
+    const s = JSON.parse(localStorage.getItem("sa3d-stats") || "{}");
+    return { best: Number(s.best) || 0, kills: Number(s.kills) || 0 };
+  } catch {
+    return { best: 0, kills: 0 };
+  }
+}
+function writeStats(s: { best: number; kills: number }) {
+  try {
+    localStorage.setItem("sa3d-stats", JSON.stringify(s));
+  } catch { /* egal */ }
+}
+function addStat(key: "kills", n: number) {
+  const s = readStats();
+  s[key] += n;
+  writeStats(s);
+}
+let bestCache = -1;
+function bestStat(_key: "best", v: number) {
+  if (bestCache < 0) bestCache = readStats().best;
+  if (v <= bestCache) return;
+  bestCache = v;
+  const s = readStats();
+  s.best = v;
+  writeStats(s);
+}
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -87,6 +116,20 @@ export class Hud {
         $("deathText").textContent = ev.head ? `${this.name(ev.killer)} war länger – Kopf an Kopf verloren` : `von ${this.name(ev.killer)}`;
       }
       this.countKill(ev.killer);
+      if (ev.revenge) {
+        if (ev.killer === me) {
+          this.announce("RACHE! +10", "streak");
+          this.onAnnounce("streak");
+        } else this.feed(`${this.name(ev.killer)} nimmt Rache an ${this.name(ev.victim)}`);
+      }
+      const prize = (ev.bounty ?? 0) - (ev.revenge ? 10 : 0);
+      if (prize > 0) {
+        if (ev.killer === me) {
+          this.announce(`KOPFGELD +${prize}`, "gold");
+          this.onAnnounce("gold");
+        } else this.feed(`👑 ${this.name(ev.killer)} kassiert ${prize} Kopfgeld`);
+      }
+      if (ev.killer === me) addStat("kills", 1);
     } else if (ev.t === "die") {
       this.streak.set(ev.id, 0);
       if (ev.cause === "wall") this.feed(`${this.name(ev.id)} ist in die Energiewand gefahren`);
@@ -114,6 +157,13 @@ export class Hud {
       this.feed("Schild hat dich gerettet!", true);
     } else if (ev.t === "emote") {
       this.showEmote(ev.id, EMOTES[ev.k] ?? "😀");
+    } else if (ev.t === "jump") {
+      if (ev.id === me) this.jumpReadyAt = performance.now() + CFG.jumpCooldown * 1000;
+    } else if (ev.t === "meteor") {
+      this.announce("ORB-REGEN! ☄️", "gold");
+      this.feed("Meteore schlagen ein – schau auf die Karte");
+      this.meteor = { x: ev.x, z: ev.z, until: performance.now() + 12000 };
+      this.onAnnounce("gold");
     } else if (ev.t === "gold") {
       this.announce("GOLDENER ORB!", "gold");
       this.feed("Folge der goldenen Lichtsäule – +40 Länge");
@@ -126,6 +176,8 @@ export class Hud {
     }
   }
 
+  private meteor: { x: number; z: number; until: number } | null = null;
+  private jumpReadyAt = 0;
   private aliveSince = performance.now();
   private lastScore = 0;
   private emotes = new Map<number, { el: HTMLDivElement; until: number }>();
@@ -243,7 +295,11 @@ export class Hud {
 
     this.updateTags();
     this.updateEmotes();
-    if (me && me.alive) this.lastScore = me.score;
+    if (me && me.alive) {
+      this.lastScore = me.score;
+      bestStat("best", lengthFromScore(me.score));
+    }
+    $("jumpBtn").classList.toggle("cd", performance.now() < this.jumpReadyAt);
 
     this.slowTimer += dt;
     if (this.slowTimer < 0.2) return;
@@ -327,6 +383,11 @@ export class Hud {
     if (this.mapBg) ctx.drawImage(this.mapBg, 0, 0, W, W);
     const toX = (x: number) => ((x + HALF) / (HALF * 2)) * W;
     const toY = (z: number) => (1 - (z + HALF) / (HALF * 2)) * W;
+    if (this.meteor && performance.now() < this.meteor.until) {
+      ctx.font = "34px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("☄️", toX(this.meteor.x), toY(this.meteor.z) + 10);
+    }
     // Boost-Pads
     ctx.fillStyle = "rgba(255,150,40,0.9)";
     for (const p of this.session.terrain.pads) ctx.fillRect(toX(p.x) - 2.5, toY(p.z) - 2.5, 5, 5);

@@ -2,7 +2,7 @@ import { CFG } from "../core/config";
 import { World, Snake } from "../sim/world";
 import type { Terrain } from "../sim/terrain";
 import {
-  F_ALIVE, F_BOOST, F_DOUBLE, F_FAST, F_GHOST, F_MAGNET, F_PROTECT, F_SHIELD, F_TURBO,
+  F_AIR, F_ALIVE, F_BOOST, F_DOUBLE, F_FAST, F_GHOST, F_MAGNET, F_PROTECT, F_SHIELD, F_TURBO,
   InputRec, PlayerInfo, ReliableMsg, SnapSnake,
   decodeInputs, encodeSnapshot, makeRoomCode, orbsToArr, powToArr, MSG_INPUT,
 } from "./protocol";
@@ -37,6 +37,7 @@ export function snakeFlags(s: Snake): number {
   if (s.power.magnet > 0) f |= F_MAGNET;
   if (s.power.turbo > 0) f |= F_TURBO;
   if (s.padTimer > 0) f |= F_FAST;
+  if (s.air > 0) f |= F_AIR;
   if (s.power.double > 0) f |= F_DOUBLE;
   return f;
 }
@@ -101,8 +102,8 @@ export class HostSession implements Session {
     this.timer = window.setInterval(() => this.pump(), 1000 / CFG.tickRate / 2);
   }
 
-  setInput(angle: number, boost: boolean) {
-    this.world.setInput(0, { angle, boost });
+  setInput(angle: number, boost: boolean, jump = false) {
+    this.world.setInput(0, { angle, boost, jump });
   }
 
   sendEmote(k: number) {
@@ -244,7 +245,7 @@ export class HostSession implements Session {
       while (r.queue.length > 3) r.queue.shift();
       const rec = r.queue.shift();
       if (rec) {
-        this.world.setInput(r.id, { angle: rec.angle, boost: rec.boost });
+        this.world.setInput(r.id, { angle: rec.angle, boost: rec.boost, jump: rec.jump });
         r.lastSeq = rec.seq;
       }
     }

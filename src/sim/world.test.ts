@@ -194,4 +194,53 @@ describe("World", () => {
     expect(w.goldId).toBeGreaterThan(0);
     expect(w.orbs.get(w.goldId)!.v).toBe(CFG.goldValue);
   });
+
+  it("Sprung: über einen fremden Körper hinweg, danach Abklingzeit", () => {
+    const w = new World(5);
+    const a = w.addPlayer(0, "A", 0);
+    const b = w.addPlayer(1, "B", 1);
+    b.score = 100;
+    b.x = 0; b.z = 0; b.angle = Math.PI / 2;
+    b.trail.resetStraight(0, 0, Math.PI / 2, 60);
+    a.x = -6; a.z = -3; a.angle = 0;
+    a.trail.resetStraight(-6, -3, 0, 10);
+    a.protect = b.protect = 0;
+    (w as any).setInput = () => {};
+    a.input = { angle: 0, boost: false, jump: true };
+    b.input = { angle: Math.PI / 2, boost: false };
+    for (let i = 0; i < 22; i++) w.step(DT); // 0,73 s: A ist über B hinweg
+    expect(a.alive).toBe(true);
+    expect(a.z).toBeGreaterThan(1.5);
+    expect(a.jumpCd).toBeGreaterThan(3);
+    expect(w.flush().events.filter((e) => e.t === "jump").length).toBe(1);
+  });
+
+  it("Kopfgeld und Rache geben Bonus", () => {
+    const w = new World(5);
+    const a = w.addPlayer(0, "A", 0);
+    const b = w.addPlayer(1, "B", 1);
+    a.score = 100;
+    b.lastKilledBy = 0;
+    const before = b.score;
+    (w as any).kill(a, 1, "snake");
+    const ev = w.flush().events.find((e) => e.t === "kill") as any;
+    expect(ev.revenge).toBe(true);
+    expect(ev.bounty).toBe(Math.round(110 * 0.25) + 10);
+    expect(b.score).toBe(before + ev.bounty);
+  });
+
+  it("Orb-Regen lässt Orbs fallen", () => {
+    const w = new World(23);
+    w.flush();
+    let ev: any;
+    for (let i = 0; i < (CFG.meteorFirst + 10) * CFG.tickRate; i++) {
+      w.step(DT);
+      const f = w.flush();
+      ev = ev || f.events.find((e) => e.t === "meteor");
+    }
+    expect(ev).toBeTruthy();
+    let near = 0;
+    for (const o of w.orbs.values()) if (o.v === 3 && Math.hypot(o.x - ev.x, o.z - ev.z) <= CFG.meteorRadius + 0.1) near++;
+    expect(near).toBeGreaterThan(CFG.meteorOrbs * 0.8);
+  });
 });

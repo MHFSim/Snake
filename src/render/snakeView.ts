@@ -4,7 +4,7 @@ import {
 import { CFG, SNAKE_COLORS, colorOf, lengthFromScore, radiusFromLength, skinOf } from "../core/config";
 import { makeScaleNormal } from "./textures";
 import { Trail } from "../sim/trail";
-import { F_BOOST, F_FAST, F_GHOST, F_PROTECT, F_SHIELD } from "../net/protocol";
+import { F_AIR, F_BOOST, F_FAST, F_GHOST, F_PROTECT, F_SHIELD } from "../net/protocol";
 import type { RSnake } from "../net/session";
 import type { TerrainView } from "./terrainView";
 
@@ -28,6 +28,8 @@ export class SnakeView {
   private colB: Color3;
   private colAg: Color3;
   visible = false;
+  private wasAir = false;
+  private airStart = 0;
   private skin = 0;
   headY = 0;
   private emissive = 0;
@@ -180,7 +182,12 @@ export class SnakeView {
 
     const len = lengthFromScore(rs.score);
     const r = radiusFromLength(len);
-    const surf = terrain.surfaceAt(rs.x, rs.z);
+    // Sprung: Bogen über die Dauer, der Körper folgt über die Spur
+    const air = (rs.flags & F_AIR) !== 0;
+    if (air && !this.wasAir) this.airStart = time;
+    this.wasAir = air;
+    const u = air ? Math.min(1, (time - this.airStart) / CFG.jumpDuration) : 0;
+    const surf = terrain.surfaceAt(rs.x, rs.z) + CFG.jumpHeight * 4 * u * (1 - u);
 
     // Spur fortschreiben
     const lx = this.trail.count ? this.trail.lastX() : NaN;

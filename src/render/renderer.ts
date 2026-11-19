@@ -365,6 +365,18 @@ export class GameRenderer implements SessionListener {
         }
         break;
       }
+      case "meteor":
+        this.effects.meteorShower(ev.x, ev.z, CFG.meteorRadius, (x, z) => this.terrainView.surfaceAt(x, z));
+        break;
+      case "jump": {
+        const v = this.views.get(ev.id);
+        if (v) {
+          const p = v.head.position;
+          this.effects.burst(p.x, p.y - 0.3, p.z, this.colorOf(ev.id), 40, 0.6);
+          this.effects.ring(p.x, p.y - 0.6, p.z, this.colorOf(ev.id));
+        }
+        break;
+      }
       case "pad": {
         const v = this.views.get(ev.id);
         if (v) {

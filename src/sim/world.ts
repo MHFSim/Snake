@@ -9,6 +9,7 @@ import { Trail } from "./trail";
 export interface Input {
   angle: number;
   boost: boolean;
+  jump?: boolean;
 }
 
 export interface Orb {
@@ -27,7 +28,9 @@ export interface PowerUp {
 }
 
 export type SimEvent =
-  | { t: "kill"; killer: number; victim: number; head?: boolean }
+  | { t: "kill"; killer: number; victim: number; head?: boolean; bounty?: number; revenge?: boolean }
+  | { t: "jump"; id: number }
+  | { t: "meteor"; x: number; z: number }
   | { t: "gold"; x: number; z: number }
   | { t: "goldEaten"; id: number }
   | { t: "pad"; id: number }
@@ -54,6 +57,9 @@ export class Snake {
   dropAcc = 0;
   power = { magnet: 0, ghost: 0, turbo: 0, shield: 0, double: 0 };
   padTimer = 0;
+  air = 0; // > 0: in der Luft
+  jumpCd = 0;
+  lastKilledBy = -1;
   trail = new Trail();
   body = new Float32Array(MAX_SEG * 3);
   bodyCount = 0;
@@ -89,6 +95,12 @@ export class World {
   private nextPowId = 1;
   private powTimer = 0;
   private goldTimer = 0;
+  private meteorTimer = 0;
+  private meteorCount = 0;
+  private meteorLeft = 0;
+  private meteorAcc = 0;
+  private meteorX = 0;
+  private meteorZ = 0;
   goldId = -1;
   private orbGrid = new Map<number, Set<number>>();
   private bodyGrid = new Map<number, number[]>();
@@ -162,6 +174,8 @@ export class World {
     s.protect = CFG.spawnProtect;
     s.power = { magnet: 0, ghost: 0, turbo: 0, shield: 0, double: 0 };
     s.padTimer = 0;
+    s.air = 0;
+    s.jumpCd = 0;
     s.boosting = false;
     s.drainAcc = 0;
     s.dropAcc = 0;
@@ -188,8 +202,24 @@ export class World {
     this.events.push({ t: "die", id: s.id, cause });
     if (killer >= 0) {
       const k = this.snakes.get(killer);
-      if (k) k.kills++;
-      this.events.push({ t: "kill", killer, victim: s.id, head: cause === "head" });
+      let bounty = 0;
+      let revenge = false;
+      if (k) {
+        k.kills++;
+        // Kopfgeld: das Opfer war die längste Schlange
+        let longest = s.length >= 30 && this.snakes.size >= 2;
+        for (const o of this.snakes.values()) if (o !== s && o.alive && o.length >= s.length) longest = false;
+        if (longest) bounty = Math.round(s.length * 0.25);
+        // Rache: das Opfer hatte den Killer zuletzt erwischt
+        if (k.lastKilledBy === s.id) {
+          revenge = true;
+          bounty += 10;
+          k.lastKilledBy = -1;
+        }
+        k.score += bounty;
+      }
+      s.lastKilledBy = killer;
+      this.events.push({ t: "kill", killer, victim: s.id, head: cause === "head", bounty, revenge });
     }
   }
 
@@ -271,6 +301,13 @@ export class World {
       s.power.turbo = Math.max(0, s.power.turbo - dt);
       s.power.double = Math.max(0, s.power.double - dt);
       s.padTimer = Math.max(0, s.padTimer - dt);
+      s.air = Math.max(0, s.air - dt);
+      s.jumpCd = Math.max(0, s.jumpCd - dt);
+      if (s.input.jump && s.jumpCd <= 0 && s.air <= 0) {
+        s.air = CFG.jumpDuration;
+        s.jumpCd = CFG.jumpCooldown;
+        this.events.push({ t: "jump", id: s.id });
+      }
       if (this.terrain.onPad(s.x, s.z)) {
         if (s.padTimer <= 0) this.events.push({ t: "pad", id: s.id });
         s.padTimer = CFG.padDuration;
@@ -324,11 +361,11 @@ export class World {
         deaths.push({ s, killer: -1, cause: "wall" });
         continue;
       }
-      if (s.protect > 0 || s.power.ghost > 0) continue;
+      if (s.protect > 0 || s.power.ghost > 0 || s.air > 0) continue;
       // Kopf gegen Kopf (wer verliert, entscheidet resolveDuels)
       let dead = false;
       for (const o of alive) {
-        if (o === s || o.protect > 0 || o.power.ghost > 0) continue;
+        if (o === s || o.protect > 0 || o.power.ghost > 0 || o.air > 0) continue;
         const rr = r + o.radius;
         if ((o.x - s.x) ** 2 + (o.z - s.z) ** 2 < rr * rr * 0.8) {
           deaths.push({ s, killer: o.id, cause: "head" });
@@ -376,7 +413,7 @@ export class World {
 
     // 4) Fressen
     for (const s of this.snakes.values()) {
-      if (!s.alive) continue;
+      if (!s.alive || s.air > 0) continue; // in der Luft frisst man nicht
       const eatR = s.power.magnet > 0 ? CFG.magnetRange : s.radius + 0.9;
       const cells = Math.ceil(eatR / ORB_CELL);
       const cx = Math.floor(s.x / ORB_CELL);
@@ -420,6 +457,29 @@ export class World {
       this.spawnGold();
     }
     if (this.goldId >= 0) this.goldTimer = 0;
+    // Orb-Regen: Meteore lassen viele Orbs auf eine Stelle fallen
+    this.meteorTimer += dt;
+    if (this.meteorLeft <= 0 && this.meteorTimer >= (this.meteorCount === 0 ? CFG.meteorFirst : CFG.meteorInterval)) {
+      this.meteorTimer = 0;
+      this.meteorCount++;
+      const a = this.rng.range(0, Math.PI * 2);
+      const r = this.rng.range(30, HALF - 60);
+      this.meteorX = Math.cos(a) * r;
+      this.meteorZ = Math.sin(a) * r;
+      this.meteorLeft = CFG.meteorOrbs;
+      this.meteorAcc = -12; // 1,2 s Vorwarnung, dann 10 Orbs pro Sekunde
+      this.events.push({ t: "meteor", x: this.meteorX, z: this.meteorZ });
+    }
+    if (this.meteorLeft > 0) {
+      this.meteorAcc += dt * 10;
+      while (this.meteorAcc >= 1 && this.meteorLeft > 0) {
+        this.meteorAcc--;
+        this.meteorLeft--;
+        const a = this.rng.range(0, Math.PI * 2);
+        const r = Math.sqrt(this.rng.next()) * CFG.meteorRadius;
+        this.addOrb(this.meteorX + Math.cos(a) * r, this.meteorZ + Math.sin(a) * r, 3, this.rng.range(0, 60));
+      }
+    }
     this.powTimer += dt;
     if (this.powTimer >= CFG.powerUpInterval) {
       this.powTimer = 0;

@@ -54,7 +54,47 @@ export class Effects {
     this.rings.push({ mesh, mat, t: 0 });
   }
 
+  private meteors: { mesh: Mesh; x: number; z: number; ground: number; t: number }[] = [];
+  private meteorMat: StandardMaterial | null = null;
+
+  // Meteorschauer: Leuchtstreifen fallen vom Himmel und schlagen ein
+  meteorShower(cx: number, cz: number, radius: number, groundAt: (x: number, z: number) => number) {
+    if (!this.meteorMat) {
+      this.meteorMat = new StandardMaterial("meteorMat", this.scene);
+      this.meteorMat.disableLighting = true;
+      this.meteorMat.emissiveColor = new Color3(3, 1.6, 0.5);
+    }
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(Math.random()) * radius;
+      const x = cx + Math.cos(a) * r;
+      const z = cz + Math.sin(a) * r;
+      const mesh = MeshBuilder.CreateSphere("meteor", { diameter: 0.9, segments: 6 }, this.scene);
+      mesh.material = this.meteorMat;
+      mesh.scaling.set(1, 7, 1);
+      mesh.isPickable = false;
+      mesh.setEnabled(false);
+      this.meteors.push({ mesh, x, z, ground: groundAt(x, z), t: -(0.8 + Math.random() * 7.2) });
+    }
+  }
+
   update(dt: number) {
+    for (let i = this.meteors.length - 1; i >= 0; i--) {
+      const m = this.meteors[i];
+      m.t += dt;
+      if (m.t < 0) continue;
+      const fall = 0.55;
+      if (m.t >= fall) {
+        this.burst(m.x, m.ground + 0.5, m.z, new Color3(1, 0.55, 0.15), 70, 1.2);
+        m.mesh.dispose();
+        this.meteors.splice(i, 1);
+        continue;
+      }
+      m.mesh.setEnabled(true);
+      const k = 1 - m.t / fall;
+      m.mesh.position.set(m.x + k * 18, m.ground + k * 70, m.z + k * 6);
+      m.mesh.rotation.z = 0.25;
+    }
     for (let i = this.rings.length - 1; i >= 0; i--) {
       const r = this.rings[i];
       r.t += dt;

@@ -8,7 +8,7 @@ import { normalizeCode } from "./net/protocol";
 import type { Session } from "./net/session";
 import { GameRenderer, Quality } from "./render/renderer";
 import { Controls } from "./input/controls";
-import { Hud } from "./ui/hud";
+import { Hud, readStats } from "./ui/hud";
 import { Sfx } from "./audio/sfx";
 import { F_BOOST, F_FAST } from "./net/protocol";
 import type { PlayerInfo } from "./net/protocol";
@@ -82,6 +82,12 @@ function playEventSound(ev: SimEvent) {
       break;
     case "pad":
       if (ev.id === me) sfx.pad();
+      break;
+    case "jump":
+      if (ev.id === me) sfx.jump();
+      break;
+    case "meteor":
+      sfx.meteor();
       break;
     case "gold":
       sfx.goldSpawn();
@@ -294,7 +300,13 @@ async function joinGame(code: string) {
   startPlaying(s, r);
 }
 
+function showRecords() {
+  const s = readStats();
+  $("records").textContent = s.best > 0 ? `🏆 Dein Rekord: Länge ${s.best} · Kills gesamt: ${s.kills}` : "";
+}
+
 function endGame() {
+  setTimeout(showRecords, 50);
   sfx.setBoost(false);
   hud?.dispose();
   hud = null;
@@ -315,11 +327,12 @@ function endGame() {
 
 async function main() {
   loadPrefs();
+  showRecords();
   buildColorPicker();
   buildSkinPicker();
   buildEmotes();
   engine = await createEngine();
-  controls = new Controls($("touch"), $("stickBase"), $("stickKnob"), $("boostBtn"));
+  controls = new Controls($("touch"), $("stickBase"), $("stickKnob"), $("boostBtn"), $("jumpBtn"));
   controls.enabled = false;
 
   $("hostBtn").onclick = () => hostGame(true);
@@ -403,7 +416,7 @@ async function main() {
     const me = session.snakes.get(session.myId);
     if (me && me.alive) {
       const target = controls.target(renderer.cameraYaw, me.angle);
-      session.setInput(target, controls.isBoost());
+      session.setInput(target, controls.isBoost(), controls.isJump());
     }
     sfx.setBoost(!!me && me.alive && (me.flags & (F_BOOST | F_FAST)) !== 0);
     session.update(now);

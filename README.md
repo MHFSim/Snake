@@ -22,6 +22,10 @@ Orbs fressen macht länger. Wer mit dem Kopf gegen einen fremden Körper fährt,
 - **Power-ups:** Magnet, Geist, Turbo, Schild, Doppelte Punkte.
 - **Killserien, Krone für den Anführer, Killcam, Emotes, 4 Muster** für die Schlange.
 - **Tag und Nacht** (6 Minuten pro Tag, für alle gleich), Wolken, Sterne, Glühwürmchen, leuchtende Pilze.
+- **Sprung:** eigener Knopf (Taste E), 5 s Abklingzeit. In der Luft fliegt man über andere Schlangen, frisst aber nicht.
+- **Kopfgeld und Rache:** Bonus für den Kill an der längsten Schlange (25 % ihrer Länge) und +10 für den Kill an dem, der einen zuletzt erwischt hat.
+- **Orb-Regen:** Meteore lassen regelmäßig 70 Orbs auf eine Stelle fallen (auf der Karte markiert).
+- **Rekorde:** beste Länge und Kills bleiben auf dem Gerät gespeichert.
 - **Ton** komplett per WebAudio, im Menü abschaltbar.
 
 ## Starten (Entwicklung)

@@ -96,6 +96,18 @@ export class Sfx {
     }
   }
 
+  jump() {
+    this.tone(300, 0.25, "sine", 0.18, 900);
+    this.noise(0.2, 0.12, 800, 3000);
+  }
+
+  meteor() {
+    for (let i = 0; i < 5; i++) {
+      this.noise(0.5, 0.2, 2500, 200, 0.9 + i * 0.5, "lowpass");
+      this.tone(120, 0.3, "sine", 0.2, 50, 1.3 + i * 0.5);
+    }
+  }
+
   kill() {
     this.tone(330, 0.12, "square", 0.12);
     this.tone(660, 0.22, "square", 0.12, 990, 0.08);
