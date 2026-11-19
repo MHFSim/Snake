@@ -13,7 +13,7 @@ const tmp = { x: 0, z: 0 };
 export function stepHead(
   st: HeadState,
   targetAngle: number,
-  boosting: boolean,
+  speed: number,
   len: number,
   dt: number,
   terrain: Terrain,
@@ -22,7 +22,6 @@ export function stepHead(
   const diff = wrapAngle(targetAngle - st.angle);
   const maxTurn = turn * dt;
   st.angle = wrapAngle(st.angle + Math.max(-maxTurn, Math.min(maxTurn, diff)));
-  const speed = boosting ? CFG.boostSpeed : CFG.baseSpeed;
   let nx = st.x + Math.sin(st.angle) * speed * dt;
   let nz = st.z + Math.cos(st.angle) * speed * dt;
   if (terrain.pushOut(nx, nz, radiusFromLength(len) * 0.7, tmp)) {
@@ -31,4 +30,8 @@ export function stepHead(
   }
   st.x = nx;
   st.z = nz;
+}
+
+export function speedFor(boosting: boolean, onPad: boolean): number {
+  return onPad ? CFG.padSpeed : boosting ? CFG.boostSpeed : CFG.baseSpeed;
 }

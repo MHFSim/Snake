@@ -32,10 +32,12 @@
         <ol id="board" class="glass"></ol>
       </div>
       <div id="feed"></div>
+      <div id="announce"></div>
       <div id="powers"></div>
       <div id="ping" class="hidden"></div>
       <div id="debug" class="hidden"></div>
       <button id="boostBtn" aria-label="Boost"><span>BOOST</span></button>
+      <div id="emotes"><div id="emoteRow" class="hidden"></div><button id="emoteBtn" aria-label="Emotes">😀</button></div>
       <div id="tags"></div>
     </div>
 
@@ -44,6 +46,7 @@
       <div class="deathBox">
         <h2 id="deathTitle">Erwischt!</h2>
         <p id="deathText"></p>
+        <p id="deathStats"></p>
         <div id="deathCount">3</div>
       </div>
     </div>
@@ -56,6 +59,7 @@
           <input id="nameInput" maxlength="14" placeholder="Name" autocomplete="off" />
         </label>
         <div class="field">Farbe<div id="colors"></div></div>
+        <div class="field">Muster<div class="seg" id="skinSeg"></div></div>
         <div class="buttons">
           <button id="hostBtn" class="primary">Spiel hosten</button>
           <button id="joinOpenBtn">Beitreten</button>
@@ -78,6 +82,11 @@
         <h2>Menü</h2>
         <div id="pauseRoom" class="hidden"><span>Raumcode</span><b id="pauseCode"></b></div>
         <ul id="playerList"></ul>
+        <div class="field">Ton
+          <div class="seg" id="soundSeg">
+            <button data-s="1">An</button><button data-s="0">Aus</button>
+          </div>
+        </div>
         <div class="field">Grafik
           <div class="seg" id="qualitySeg">
             <button data-q="low">Niedrig</button><button data-q="medium">Mittel</button><button data-q="high">Hoch</button>

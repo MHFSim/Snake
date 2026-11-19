@@ -4,7 +4,7 @@ import {
 import { HALF } from "../core/config";
 import { Rng } from "../core/rng";
 import { Terrain, WATER_LEVEL, ObstacleKind } from "../sim/terrain";
-import { makeDetailTexture, makeGridTexture, makeNormalMap } from "./textures";
+import { makeDetailTexture, makeGridTexture, makeNormalMap, makePadTexture } from "./textures";
 
 // Gelände, Wasser, Grenze, Bäume, Felsen, Kristalle, Gras.
 
@@ -42,6 +42,124 @@ export class TerrainView {
     this.buildWall();
     this.crystalMat = this.buildObstacles();
     this.buildGrass();
+    this.buildPads();
+    this.buildFlora();
+  }
+
+  // ---------- Blumen (Wiese) und leuchtende Pilze (Wald) ----------
+  mushroomMat: PBRMaterial | null = null;
+  flora: Mesh[] = [];
+  private buildFlora() {
+    const sc = this.scene;
+    const rng = new Rng(this.terrain.seed ^ 0xf10a);
+    const m = new Matrix();
+    const q = new Quaternion();
+    const s = new Vector3();
+    const p = new Vector3();
+    const scatter = (mesh: Mesh, count: number, want: (b: ReturnType<Terrain["biome"]>) => number, colors: Color3[] | null, sMin: number, sMax: number) => {
+      const mats: number[] = [];
+      const cols: number[] = [];
+      for (let tries = 0; tries < count * 12 && mats.length / 16 < count; tries++) {
+        const x = rng.range(-HALF + 6, HALF - 6);
+        const z = rng.range(-HALF + 6, HALF - 6);
+        if (rng.next() > want(this.terrain.biome(x, z))) continue;
+        const y = this.heightAt(x, z);
+        if (y < WATER_LEVEL + 0.4) continue;
+        Quaternion.RotationYawPitchRollToRef(rng.range(0, 6.28), 0, 0, q);
+        s.setAll(rng.range(sMin, sMax));
+        p.set(x, y - 0.03, z);
+        Matrix.ComposeToRef(s, q, p, m);
+        for (const v of m.toArray()) mats.push(v);
+        if (colors) {
+          const c = colors[rng.int(0, colors.length)].toLinearSpace();
+          cols.push(c.r, c.g, c.b, 1);
+        }
+      }
+      mesh.thinInstanceSetBuffer("matrix", new Float32Array(mats), 16, true);
+      if (colors) mesh.thinInstanceSetBuffer("color", new Float32Array(cols), 4, true);
+      mesh.isPickable = false;
+      mesh.alwaysSelectAsActiveMesh = true;
+      this.flora.push(mesh);
+    };
+    // Blume: Blüte (Farbe pro Instanz)
+    const petals: Mesh[] = [];
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      const pt = MeshBuilder.CreateSphere("petal", { diameter: 0.22, segments: 4 }, sc);
+      pt.scaling.set(1, 0.35, 1);
+      pt.position.set(Math.cos(a) * 0.13, 0.42, Math.sin(a) * 0.13);
+      petals.push(pt);
+    }
+    const stem = MeshBuilder.CreateCylinder("stem", { height: 0.42, diameter: 0.035, tessellation: 4 }, sc);
+    stem.position.y = 0.21;
+    petals.push(stem);
+    const flower = Mesh.MergeMeshes(petals, true, true)!;
+    flower.name = "flowers";
+    const fm = new PBRMaterial("flowerMat", sc);
+    fm.albedoColor = Color3.White();
+    fm.metallic = 0;
+    fm.roughness = 0.7;
+    fm.environmentIntensity = 0.7;
+    flower.material = fm;
+    scatter(flower, 3500, (b) => b.meadow * 0.9 + b.lake * 0.25, [hex("#ffffff"), hex("#ffd84a"), hex("#ff7ab8"), hex("#c08bff"), hex("#ff5a4a"), hex("#7ad0ff")], 0.8, 1.6);
+    // Pilz: leuchtet nachts
+    const cap = MeshBuilder.CreateSphere("cap", { diameter: 0.5, segments: 8, slice: 0.5 }, sc);
+    cap.position.y = 0.28;
+    const foot = MeshBuilder.CreateCylinder("foot", { height: 0.3, diameterTop: 0.1, diameterBottom: 0.16, tessellation: 6 }, sc);
+    foot.position.y = 0.15;
+    const shroom = Mesh.MergeMeshes([cap, foot], true, true)!;
+    shroom.name = "mushrooms";
+    const mm = new PBRMaterial("mushroomMat", sc);
+    mm.albedoColor = new Color3(0.55, 0.85, 1);
+    mm.metallic = 0;
+    mm.roughness = 0.4;
+    mm.emissiveColor = new Color3(0.2, 0.9, 1.3);
+    mm.emissiveIntensity = 0.15;
+    shroom.material = mm;
+    this.mushroomMat = mm;
+    scatter(shroom, 1400, (b) => b.forest, null, 0.7, 1.5);
+  }
+
+  // ---------- Boost-Pads ----------
+  private padTex!: Texture;
+  private buildPads() {
+    const pads = this.terrain.pads;
+    if (!pads.length) return;
+    const mat = new StandardMaterial("padMat", this.scene);
+    this.padTex = makePadTexture(this.scene);
+    this.padTex.vScale = 2;
+    mat.diffuseColor = Color3.Black();
+    mat.emissiveTexture = this.padTex;
+    mat.opacityTexture = this.padTex;
+    mat.emissiveColor = new Color3(2.4, 1.2, 0.25);
+    mat.disableLighting = true;
+    mat.backFaceCulling = false;
+    const plate = MeshBuilder.CreateGround("pad", { width: 4.6, height: 6.4 }, this.scene);
+    plate.material = mat;
+    plate.isPickable = false;
+    const ringMat = new StandardMaterial("padRingMat", this.scene);
+    ringMat.disableLighting = true;
+    ringMat.emissiveColor = new Color3(2.2, 1.0, 0.2);
+    const ring = MeshBuilder.CreateTorus("padRing", { diameter: 6.4, thickness: 0.18, tessellation: 40 }, this.scene);
+    ring.material = ringMat;
+    ring.isPickable = false;
+    const bufA = new Float32Array(pads.length * 16);
+    const bufB = new Float32Array(pads.length * 16);
+    const m = new Matrix();
+    const q = new Quaternion();
+    const one = new Vector3(1, 1, 1);
+    const p = new Vector3();
+    pads.forEach((pad, i) => {
+      Quaternion.RotationYawPitchRollToRef(pad.angle, 0, 0, q);
+      p.set(pad.x, this.heightAt(pad.x, pad.z) + 0.12, pad.z);
+      Matrix.ComposeToRef(one, q, p, m);
+      m.copyToArray(bufA, i * 16);
+      m.copyToArray(bufB, i * 16);
+    });
+    plate.thinInstanceSetBuffer("matrix", bufA, 16, true);
+    ring.thinInstanceSetBuffer("matrix", bufB, 16, true);
+    plate.alwaysSelectAsActiveMesh = true;
+    ring.alwaysSelectAsActiveMesh = true;
   }
 
   // ---------- Höhenraster + Farben ----------
@@ -452,6 +570,10 @@ export class TerrainView {
       Matrix.ComposeToRef(s, q, p, m);
       m.toArray().forEach((v) => mats.push(v));
     }
+    // Positionen änderbar machen, damit das Gras im Wind wehen kann
+    this.grassBase = new Float32Array(grass.getVerticesData(VertexBuffer.PositionKind)!);
+    this.grassPos = new Float32Array(this.grassBase);
+    grass.setVerticesData(VertexBuffer.PositionKind, this.grassPos, true);
     grass.thinInstanceSetBuffer("matrix", new Float32Array(mats), 16, true);
     grass.receiveShadows = true;
     grass.isPickable = false;
@@ -459,10 +581,28 @@ export class TerrainView {
     this.grass = grass;
   }
 
+  private grassBase: Float32Array | null = null;
+  private grassPos: Float32Array | null = null;
+  night = 0;
+
   update(dt: number, time: number) {
+    // Wind: Halmspitzen bewegen (wenige Punkte, gilt für alle Instanzen)
+    if (this.grass && this.grass.isEnabled() && this.grassBase && this.grassPos) {
+      const b = this.grassBase;
+      const g = this.grassPos;
+      for (let i = 0; i < b.length; i += 3) {
+        const w = b[i + 1]; // Höhe: unten fest, oben stark
+        g[i] = b[i] + Math.sin(time * 1.9 + i) * 0.16 * w;
+        g[i + 2] = b[i + 2] + Math.cos(time * 1.4 + i * 0.7) * 0.12 * w;
+      }
+      this.grass.updateVerticesData(VertexBuffer.PositionKind, g);
+    }
+    if (this.mushroomMat) this.mushroomMat.emissiveIntensity = 0.15 + this.night * 1.6;
+    this.crystalMat.emissiveIntensity = 1.4 + this.night * 1.2;
     this.waterBump.uOffset = time * 0.004;
     this.waterBump.vOffset = time * 0.0025;
     this.wallTex.vOffset = -time * 0.15;
+    if (this.padTex) this.padTex.vOffset = -time * 1.6;
     void dt;
   }
 

@@ -1,8 +1,8 @@
 import { CFG, PowerKind, lengthFromScore } from "../core/config";
 import { Terrain } from "../sim/terrain";
-import { stepHead, HeadState } from "../sim/movement";
+import { speedFor, stepHead, HeadState } from "../sim/movement";
 import {
-  F_ALIVE, F_TURBO, InputRec, MSG_SNAPSHOT, PlayerInfo, ReliableMsg, Snapshot,
+  F_ALIVE, F_FAST, F_TURBO, InputRec, MSG_SNAPSHOT, PlayerInfo, ReliableMsg, Snapshot,
   decodeSnapshot, encodeInputs,
 } from "./protocol";
 import { ClientNet } from "./transport";
@@ -126,6 +126,10 @@ export class ClientSession implements Session {
     this.input.boost = boost;
   }
 
+  sendEmote(k: number) {
+    this.net.sendRel({ t: "emote", k } satisfies ReliableMsg);
+  }
+
   private onRel(msg: ReliableMsg) {
     switch (msg.t) {
       case "players":
@@ -164,6 +168,7 @@ export class ClientSession implements Session {
               this.pred = { x: e.x, z: e.z, angle: e.a };
               this.predPrev = { ...this.pred };
               this.pending = [];
+              this.predPad = 0;
               this.corr.x = this.corr.z = 0;
               this.predValid = true;
               this.input.angle = e.a;
@@ -204,7 +209,9 @@ export class ClientSession implements Session {
         this.pending = this.pending.filter((p) => p.seq > snap.ack);
         const len = lengthFromScore(mine.score);
         const canBoost = (mine.flags & F_TURBO) !== 0 || mine.score >= CFG.minBoostScore;
-        for (const p of this.pending) stepHead(base, p.angle, p.boost && canBoost, len, 1 / CFG.tickRate, this.terrain);
+        let pad = (mine.flags & F_FAST) !== 0 ? CFG.padDuration * 0.5 : 0;
+        for (const p of this.pending) pad = this.predictStep(base, p, canBoost, len, pad);
+        this.predPad = pad;
         const ex = this.pred.x - base.x;
         const ez = this.pred.z - base.z;
         if (ex * ex + ez * ez > 25) {
@@ -246,7 +253,7 @@ export class ClientSession implements Session {
       this.predPrev = { ...this.pred };
       const len = lengthFromScore(this.me.score);
       const canBoost = (this.me.flags & F_TURBO) !== 0 || this.me.score >= CFG.minBoostScore;
-      stepHead(this.pred, rec.angle, rec.boost && canBoost, len, 1 / CFG.tickRate, this.terrain);
+      this.predPad = this.predictStep(this.pred, rec, canBoost, len, this.predPad);
     }
     this.lastPredTime = performance.now();
     this.net.sendFast(encodeInputs(this.pending.slice(-3)));
@@ -254,6 +261,16 @@ export class ClientSession implements Session {
     this.tickOffset -= 0.002;
   }
   private lastPredTime = performance.now();
+  private predPad = 0;
+
+  // Ein Tick der eigenen Schlange, gleiche Reihenfolge wie beim Host. Gibt den Pad-Timer zurück.
+  private predictStep(st: HeadState, rec: InputRec, canBoost: boolean, len: number, pad: number): number {
+    const dt = 1 / CFG.tickRate;
+    pad = Math.max(0, pad - dt);
+    if (this.terrain.onPad(st.x, st.z)) pad = CFG.padDuration;
+    stepHead(st, rec.angle, speedFor(rec.boost && canBoost, pad > 0), len, dt, this.terrain);
+    return pad;
+  }
 
   update(nowMs: number) {
     const dt = Math.min(0.1, (nowMs - this.lastFrame) / 1000);
@@ -320,6 +337,11 @@ export class ClientSession implements Session {
       const latest = this.snaps[this.snaps.length - 1]?.snakes.find((s) => s.id === this.myId);
       if (latest) me.kills = latest.kills;
     }
+  }
+
+  serverTime(nowMs: number): number {
+    if (!Number.isFinite(this.tickOffset)) return 0;
+    return ((nowMs * CFG.tickRate) / 1000 + this.tickOffset) / CFG.tickRate;
   }
 
   dispose() {

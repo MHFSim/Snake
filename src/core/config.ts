@@ -23,18 +23,32 @@ export const CFG = {
   respawnDelay: 3,
   spawnProtect: 3,
 
-  powerDur: { magnet: 8, ghost: 5, turbo: 6, shield: 0 },
+  powerDur: { magnet: 8, ghost: 5, turbo: 6, shield: 0, double: 10 },
   magnetRange: 10,
+
+  // Goldener Orb: großes Event mit Lichtsäule
+  goldValue: 40,
+  goldFirst: 40, // Sekunden bis zum ersten Gold-Orb
+  goldInterval: 75,
+
+  // Boost-Pads auf der Karte
+  padCount: 26,
+  padRadius: 2.8,
+  padSpeed: 20,
+  padDuration: 1.2,
+
+  // Tag-Nacht-Zyklus (Sekunden pro Tag)
+  dayLength: 360,
 
   snapshotRate: 15,
   interpDelayMs: 100,
-  protocolVersion: 2,
+  protocolVersion: 4,
 } as const;
 
 export const HALF = CFG.mapSize / 2;
 
-export type PowerKind = "magnet" | "ghost" | "turbo" | "shield";
-export const POWER_KINDS: PowerKind[] = ["magnet", "ghost", "turbo", "shield"];
+export type PowerKind = "magnet" | "ghost" | "turbo" | "shield" | "double";
+export const POWER_KINDS: PowerKind[] = ["magnet", "ghost", "turbo", "shield", "double"];
 
 // Farbpaare (Kopf -> Schwanz) für die 8 Spielerfarben
 export const SNAKE_COLORS: [string, string][] = [
@@ -47,6 +61,12 @@ export const SNAKE_COLORS: [string, string][] = [
   ["#e2e8f0", "#64748b"],
   ["#fb923c", "#dc2626"],
 ];
+
+// Muster der Schlange. Im Feld "color" steckt Farbe + 8 * Muster.
+export const SKINS = ["Verlauf", "Streifen", "Tiger", "Regenbogen"];
+export const EMOTES = ["😂", "😡", "👋", "💀", "🔥", "👑"];
+export const colorOf = (c: number) => ((c % 8) + 8) % 8;
+export const skinOf = (c: number) => Math.floor(c / 8) % SKINS.length;
 
 export function lengthFromScore(score: number): number {
   return CFG.startLength + Math.floor(score / CFG.pointsPerSegment);

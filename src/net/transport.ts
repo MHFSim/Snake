@@ -127,7 +127,7 @@ export class ClientNet {
           reject(new Error(why));
         } else this.closeWith(why);
       };
-      const timer = setTimeout(() => fail("timeout"), 15000);
+      const timer = setTimeout(() => fail("timeout"), 25000);
       this.peer.on("error", (err: { type?: string }) => {
         fail(err.type === "peer-unavailable" ? "notfound" : err.type || "error");
       });

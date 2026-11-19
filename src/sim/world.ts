@@ -1,5 +1,5 @@
 import { CFG, HALF, PowerKind, POWER_KINDS, lengthFromScore, radiusFromLength } from "../core/config";
-import { stepHead } from "./movement";
+import { speedFor, stepHead } from "./movement";
 import { Rng } from "../core/rng";
 import { Terrain, WATER_LEVEL } from "./terrain";
 import { Trail } from "./trail";
@@ -27,7 +27,11 @@ export interface PowerUp {
 }
 
 export type SimEvent =
-  | { t: "kill"; killer: number; victim: number }
+  | { t: "kill"; killer: number; victim: number; head?: boolean }
+  | { t: "gold"; x: number; z: number }
+  | { t: "goldEaten"; id: number }
+  | { t: "pad"; id: number }
+  | { t: "emote"; id: number; k: number }
   | { t: "die"; id: number; cause: "snake" | "wall" | "head" | "left" }
   | { t: "spawn"; id: number; x: number; z: number; a: number }
   | { t: "power"; id: number; kind: PowerKind }
@@ -48,7 +52,8 @@ export class Snake {
   boosting = false;
   drainAcc = 0;
   dropAcc = 0;
-  power = { magnet: 0, ghost: 0, turbo: 0, shield: 0 };
+  power = { magnet: 0, ghost: 0, turbo: 0, shield: 0, double: 0 };
+  padTimer = 0;
   trail = new Trail();
   body = new Float32Array(MAX_SEG * 3);
   bodyCount = 0;
@@ -83,6 +88,8 @@ export class World {
   private nextOrbId = 1;
   private nextPowId = 1;
   private powTimer = 0;
+  private goldTimer = 0;
+  goldId = -1;
   private orbGrid = new Map<number, Set<number>>();
   private bodyGrid = new Map<number, number[]>();
 
@@ -153,7 +160,8 @@ export class World {
     s.score = 0;
     s.alive = true;
     s.protect = CFG.spawnProtect;
-    s.power = { magnet: 0, ghost: 0, turbo: 0, shield: 0 };
+    s.power = { magnet: 0, ghost: 0, turbo: 0, shield: 0, double: 0 };
+    s.padTimer = 0;
     s.boosting = false;
     s.drainAcc = 0;
     s.dropAcc = 0;
@@ -181,7 +189,7 @@ export class World {
     if (killer >= 0) {
       const k = this.snakes.get(killer);
       if (k) k.kills++;
-      this.events.push({ t: "kill", killer, victim: s.id });
+      this.events.push({ t: "kill", killer, victim: s.id, head: cause === "head" });
     }
   }
 
@@ -216,6 +224,21 @@ export class World {
     }
   }
 
+  private spawnGold() {
+    for (let i = 0; i < 30; i++) {
+      const a = this.rng.range(0, Math.PI * 2);
+      const r = this.rng.range(40, HALF - 50);
+      const x = Math.cos(a) * r;
+      const z = Math.sin(a) * r;
+      if (!this.terrain.isFree(x, z, 3)) continue;
+      if (this.terrain.heightAt(x, z) < WATER_LEVEL + 0.3) continue;
+      this.addOrb(x, z, CFG.goldValue, 48);
+      this.goldId = this.nextOrbId - 1;
+      this.events.push({ t: "gold", x, z });
+      return;
+    }
+  }
+
   private spawnPowerUp() {
     for (let i = 0; i < 10; i++) {
       const x = this.rng.range(-HALF + 30, HALF - 30);
@@ -246,12 +269,18 @@ export class World {
       s.power.magnet = Math.max(0, s.power.magnet - dt);
       s.power.ghost = Math.max(0, s.power.ghost - dt);
       s.power.turbo = Math.max(0, s.power.turbo - dt);
+      s.power.double = Math.max(0, s.power.double - dt);
+      s.padTimer = Math.max(0, s.padTimer - dt);
+      if (this.terrain.onPad(s.x, s.z)) {
+        if (s.padTimer <= 0) this.events.push({ t: "pad", id: s.id });
+        s.padTimer = CFG.padDuration;
+      }
 
       const len = s.length;
       const canBoost = s.power.turbo > 0 || s.score >= CFG.minBoostScore;
       s.boosting = s.input.boost && canBoost;
       // Lenken, fahren, an Hindernissen abgleiten
-      stepHead(s, s.input.angle, s.boosting, len, dt, this.terrain);
+      stepHead(s, s.input.angle, speedFor(s.boosting, s.padTimer > 0), len, dt, this.terrain);
 
       // Boost kostet Länge
       if (s.boosting && s.power.turbo <= 0) {
@@ -296,13 +325,13 @@ export class World {
         continue;
       }
       if (s.protect > 0 || s.power.ghost > 0) continue;
-      // Kopf gegen Kopf
+      // Kopf gegen Kopf (wer verliert, entscheidet resolveDuels)
       let dead = false;
       for (const o of alive) {
         if (o === s || o.protect > 0 || o.power.ghost > 0) continue;
         const rr = r + o.radius;
         if ((o.x - s.x) ** 2 + (o.z - s.z) ** 2 < rr * rr * 0.8) {
-          deaths.push({ s, killer: -1, cause: "head" });
+          deaths.push({ s, killer: o.id, cause: "head" });
           dead = true;
           break;
         }
@@ -331,6 +360,7 @@ export class World {
         }
       }
     }
+    this.resolveDuels(deaths);
     const handled = new Set<Snake>();
     for (const d of deaths) {
       if (handled.has(d.s) || !d.s.alive) continue;
@@ -358,7 +388,11 @@ export class World {
           for (const id of set) {
             const o = this.orbs.get(id)!;
             if ((o.x - s.x) ** 2 + (o.z - s.z) ** 2 < eatR * eatR) {
-              s.score += o.v;
+              s.score += o.v * (s.power.double > 0 ? 2 : 1);
+              if (o.id === this.goldId) {
+                this.goldId = -1;
+                this.events.push({ t: "goldEaten", id: s.id });
+              }
               this.removeOrb(o, s.id);
             }
           }
@@ -380,11 +414,45 @@ export class World {
     // 5) Nachschub
     const missing = CFG.orbTarget - this.orbs.size;
     for (let i = 0; i < Math.min(missing, 15); i++) this.spawnRandomOrb();
+    this.goldTimer += dt;
+    if (this.goldId < 0 && this.goldTimer >= (this.tick < CFG.goldFirst * CFG.tickRate + 2 ? CFG.goldFirst : CFG.goldInterval)) {
+      this.goldTimer = 0;
+      this.spawnGold();
+    }
+    if (this.goldId >= 0) this.goldTimer = 0;
     this.powTimer += dt;
     if (this.powTimer >= CFG.powerUpInterval) {
       this.powTimer = 0;
       if (this.powerups.size < CFG.maxPowerUps) this.spawnPowerUp();
     }
+  }
+
+  // Wenn sich zwei Schlangen im selben Tick gegenseitig töten würden (z. B. Kopf an Kopf),
+  // gewinnt eine: die längere, bei Gleichstand die boostende, sonst entscheidet der Tick.
+  private resolveDuels(deaths: { s: Snake; killer: number; cause: "snake" | "wall" | "head" }[]) {
+    const byId = new Map<number, (typeof deaths)[number]>();
+    for (const d of deaths) if (!byId.has(d.s.id)) byId.set(d.s.id, d);
+    const drop = new Set<(typeof deaths)[number]>();
+    for (const d of byId.values()) {
+      if (d.killer < 0 || drop.has(d)) continue;
+      const other = byId.get(d.killer);
+      if (!other || other.killer !== d.s.id || drop.has(other)) continue;
+      const loser = World.duelLoser(d.s, other.s, this.tick);
+      const winnerEntry = loser === d.s ? other : d;
+      const loserEntry = loser === d.s ? d : other;
+      drop.add(winnerEntry);
+      loserEntry.cause = "head";
+    }
+    for (let i = deaths.length - 1; i >= 0; i--) if (drop.has(deaths[i])) deaths.splice(i, 1);
+  }
+
+  static duelLoser(a: Snake, b: Snake, tick: number): Snake {
+    if (a.length !== b.length) return a.length < b.length ? a : b;
+    if (a.boosting !== b.boosting) return a.boosting ? b : a;
+    const lowFirst = (tick + a.id + b.id) % 2 === 0;
+    const low = a.id < b.id ? a : b;
+    const high = low === a ? b : a;
+    return lowFirst ? high : low;
   }
 
   flush() {

@@ -1,5 +1,5 @@
 import { Color3, Mesh, MeshBuilder, PBRMaterial, Scene, StandardMaterial, TransformNode } from "@babylonjs/core";
-import type { PowerKind } from "../core/config";
+import { CFG, PowerKind } from "../core/config";
 import type { TerrainView } from "./terrainView";
 
 // Energie-Orbs als Thin Instances (ein Draw Call), dazu fliegende Orbs beim Fressen und Power-ups.
@@ -28,6 +28,7 @@ export const POWER_COLORS: Record<PowerKind, Color3> = {
   ghost: new Color3(1.6, 1.6, 2.4),
   turbo: new Color3(2.6, 1.4, 0.2),
   shield: new Color3(0.3, 1.2, 2.8),
+  double: new Color3(0.5, 2.8, 0.7),
 };
 
 export class OrbView {
@@ -41,6 +42,7 @@ export class OrbView {
   private idToIdx = new Map<number, number>();
   private idxToId = new Int32Array(CAP);
   private base = new Float32Array(CAP * 4); // x, y, z, scale
+  private vals = new Float32Array(CAP);
   private flying: Fly[] = [];
   private dirty = false;
   private pows = new Map<number, { node: TransformNode; kind: PowerKind; y: number }>();
@@ -75,7 +77,45 @@ export class OrbView {
       ghost: this.makePowTemplate("ghost"),
       turbo: this.makePowTemplate("turbo"),
       shield: this.makePowTemplate("shield"),
+      double: this.makePowTemplate("double"),
     };
+    this.buildGold();
+  }
+
+  // ---------- Goldener Orb mit Lichtsäule ----------
+  private gold!: TransformNode;
+  private goldBeam!: Mesh;
+  private goldCore!: Mesh;
+  private goldRing!: Mesh;
+  goldId = -1;
+  goldPos: { x: number; z: number } | null = null;
+
+  private buildGold() {
+    const sc = this.scene;
+    this.gold = new TransformNode("gold", sc);
+    const coreMat = new PBRMaterial("goldMat", sc);
+    coreMat.albedoColor = new Color3(1, 0.75, 0.2);
+    coreMat.metallic = 1;
+    coreMat.roughness = 0.15;
+    coreMat.emissiveColor = new Color3(2.6, 1.8, 0.35);
+    this.goldCore = MeshBuilder.CreatePolyhedron("goldCore", { type: 2, size: 0.85 }, sc);
+    this.goldCore.material = coreMat;
+    this.goldCore.parent = this.gold;
+    this.goldRing = MeshBuilder.CreateTorus("goldRing", { diameter: 3.2, thickness: 0.12, tessellation: 48 }, sc);
+    this.goldRing.material = coreMat;
+    this.goldRing.parent = this.gold;
+    const beamMat = new StandardMaterial("beamMat", sc);
+    beamMat.disableLighting = true;
+    beamMat.emissiveColor = new Color3(1.6, 1.1, 0.25);
+    beamMat.alpha = 0.28;
+    beamMat.backFaceCulling = false;
+    beamMat.fogEnabled = false;
+    this.goldBeam = MeshBuilder.CreateCylinder("goldBeam", { height: 160, diameterTop: 0.6, diameterBottom: 2.6, tessellation: 20, cap: Mesh.NO_CAP }, sc);
+    this.goldBeam.material = beamMat;
+    this.goldBeam.parent = this.gold;
+    this.goldBeam.position.y = 80;
+    for (const m of [this.goldCore, this.goldRing, this.goldBeam]) m.isPickable = false;
+    this.gold.setEnabled(false);
   }
 
   private makePowTemplate(kind: PowerKind): Mesh {
@@ -90,6 +130,7 @@ export class OrbView {
     if (kind === "magnet") m = MeshBuilder.CreateTorus("pm", { diameter: 1.4, thickness: 0.4, tessellation: 24 }, sc);
     else if (kind === "ghost") m = MeshBuilder.CreateIcoSphere("pg", { radius: 0.8, subdivisions: 1, flat: true }, sc);
     else if (kind === "turbo") m = MeshBuilder.CreatePolyhedron("pt", { type: 1, size: 0.75 }, sc);
+    else if (kind === "double") m = MeshBuilder.CreateTorusKnot("pd", { radius: 0.5, tube: 0.16, radialSegments: 64, tubularSegments: 10 }, sc);
     else m = MeshBuilder.CreatePolyhedron("ps", { type: 2, size: 0.6 }, sc);
     m.material = mat;
     const ring = MeshBuilder.CreateTorus("ring", { diameter: 2.6, thickness: 0.06, tessellation: 40 }, sc);
@@ -102,6 +143,13 @@ export class OrbView {
   }
 
   add(id: number, x: number, z: number, v: number, hue: number) {
+    if (v >= CFG.goldValue) {
+      this.goldId = id;
+      this.goldPos = { x, z };
+      this.gold.position.set(x, this.terrain.surfaceAt(x, z) + 1.4, z);
+      this.gold.setEnabled(true);
+      return;
+    }
     if (this.count >= CAP || this.idToIdx.has(id)) return;
     const i = this.count++;
     this.idToIdx.set(id, i);
@@ -112,6 +160,7 @@ export class OrbView {
     this.base[i * 4 + 1] = y;
     this.base[i * 4 + 2] = z;
     this.base[i * 4 + 3] = s;
+    this.vals[i] = v;
     this.writeMat(i);
     hueToRgb(hue, this.tmp, v >= 3 ? 2.8 : 1.9);
     this.col[i * 4] = this.tmp[0];
@@ -132,9 +181,17 @@ export class OrbView {
     m[o + 14] = this.base[i * 4 + 2];
   }
 
-  remove(id: number, eater: number) {
+  // Gibt den Wert des Orbs zurück (0 = unbekannt)
+  remove(id: number, eater: number): number {
+    if (id === this.goldId) {
+      this.goldId = -1;
+      this.goldPos = null;
+      this.gold.setEnabled(false);
+      return CFG.goldValue;
+    }
     const i = this.idToIdx.get(id);
-    if (i === undefined) return;
+    if (i === undefined) return 0;
+    const value = this.vals[i];
     if (eater >= 0 && this.flying.length < FLY_CAP) {
       this.flying.push({
         x: this.base[i * 4], y: this.base[i * 4 + 1], z: this.base[i * 4 + 2],
@@ -148,11 +205,13 @@ export class OrbView {
       this.mat.copyWithin(i * 16, last * 16, last * 16 + 16);
       this.col.copyWithin(i * 4, last * 4, last * 4 + 4);
       this.base.copyWithin(i * 4, last * 4, last * 4 + 4);
+      this.vals[i] = this.vals[last];
       this.idxToId[i] = lastId;
       this.idToIdx.set(lastId, i);
     }
     this.idToIdx.delete(id);
     this.dirty = true;
+    return value;
   }
 
   clear() {
@@ -218,6 +277,13 @@ export class OrbView {
     if (n > 0) {
       this.fly.thinInstanceBufferUpdated("matrix");
       this.fly.thinInstanceBufferUpdated("color");
+    }
+    if (this.goldId >= 0) {
+      this.goldCore.rotation.y = time * 1.4;
+      this.goldCore.position.y = Math.sin(time * 2.2) * 0.3;
+      this.goldRing.rotation.x = Math.PI / 2 + Math.sin(time) * 0.4;
+      this.goldRing.rotation.y = time * 0.8;
+      this.goldBeam.scaling.x = this.goldBeam.scaling.z = 1 + Math.sin(time * 4) * 0.12;
     }
     // Power-ups schweben und drehen sich
     for (const p of this.pows.values()) {

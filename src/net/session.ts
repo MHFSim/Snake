@@ -39,8 +39,11 @@ export interface Session {
   readonly snakes: Map<number, RSnake>;
   ping: number;
   setInput(angle: number, boost: boolean): void;
+  sendEmote(k: number): void;
   // Wird jeden Frame aufgerufen; aktualisiert snakes
   update(nowMs: number): void;
+  // Spielzeit in Sekunden, für alle Spieler gleich (z. B. für Tag und Nacht)
+  serverTime(nowMs: number): number;
   dispose(): void;
 }
 

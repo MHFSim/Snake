@@ -1,6 +1,6 @@
 import { Simplex2 } from "../core/noise";
 import { Rng } from "../core/rng";
-import { HALF } from "../core/config";
+import { CFG, HALF } from "../core/config";
 
 // Gelände: wird von Spiellogik UND Grafik benutzt. Nur aus dem Seed berechnet.
 
@@ -38,12 +38,19 @@ function angDist(a: number, b: number): number {
   return d > Math.PI ? Math.PI * 2 - d : d;
 }
 
+export interface Pad {
+  x: number;
+  z: number;
+  angle: number;
+}
+
 export class Terrain {
   readonly seed: number;
   private n1: Simplex2;
   private n2: Simplex2;
   private n3: Simplex2;
   readonly obstacles: Obstacle[] = [];
+  readonly pads: Pad[] = [];
   private obstGrid = new Map<number, Obstacle[]>();
   private static CELL = 8;
 
@@ -53,6 +60,32 @@ export class Terrain {
     this.n2 = new Simplex2(seed ^ 0x9e3779b9);
     this.n3 = new Simplex2(seed ^ 0x51ed270b);
     this.placeObstacles();
+    this.placePads();
+  }
+
+  // Boost-Pads auf flachen, freien Stellen
+  private placePads() {
+    const rng = new Rng(this.seed ^ 0x5eed);
+    for (let tries = 0; tries < 4000 && this.pads.length < CFG.padCount; tries++) {
+      const x = rng.range(-HALF + 30, HALF - 30);
+      const z = rng.range(-HALF + 30, HALF - 30);
+      if (Math.hypot(x, z) < 30) continue;
+      const h = this.heightAt(x, z);
+      if (h < WATER_LEVEL + 0.5) continue;
+      let flat = true;
+      for (const [dx, dz] of [[3, 0], [-3, 0], [0, 3], [0, -3]]) {
+        if (Math.abs(this.heightAt(x + dx, z + dz) - h) > 0.5) flat = false;
+      }
+      if (!flat || !this.isFree(x, z, 5)) continue;
+      if (this.pads.some((p) => Math.hypot(p.x - x, p.z - z) < 45)) continue;
+      this.pads.push({ x, z, angle: rng.range(-Math.PI, Math.PI) });
+    }
+  }
+
+  onPad(x: number, z: number): boolean {
+    const r2 = CFG.padRadius * CFG.padRadius;
+    for (const p of this.pads) if ((p.x - x) ** 2 + (p.z - z) ** 2 < r2) return true;
+    return false;
   }
 
   biome(x: number, z: number): Biome {

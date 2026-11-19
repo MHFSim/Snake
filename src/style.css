@@ -92,6 +92,9 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; }
 /* Overlays */
 .screen { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; }
 #menu, #pause { background: radial-gradient(ellipse at 30% 20%, #1d3b6b 0%, #0b1020 55%), #0b1020; overflow: auto; padding: 16px; }
+/* Sobald die 3D-Welt hinter dem Menü läuft, wird der Hintergrund durchsichtig */
+body.menu3d #menu { background: linear-gradient(90deg, rgba(6,10,24,.55), rgba(6,10,24,.1) 70%); justify-content: flex-start; }
+body.menu3d #menu .menuCard { margin: auto auto auto max(16px, 6vw); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); background: rgba(12,18,38,.62); }
 #pause { background: rgba(5, 8, 18, .72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 .menuCard {
   width: min(460px, 100%); padding: 22px; border-radius: 22px; background: rgba(15, 22, 44, .75);
@@ -155,3 +158,37 @@ h2 { margin: 0 0 12px; }
   .menuCard { padding: 16px; }
   h1 { font-size: 24px; margin-bottom: 8px; }
 }
+
+/* Große Ansagen in der Mitte */
+#announce {
+  position: absolute; top: 28%; left: 50%; transform: translate(-50%, -50%); pointer-events: none;
+  font-size: clamp(28px, 7vw, 56px); font-weight: 900; letter-spacing: .06em; white-space: nowrap; opacity: 0;
+  text-shadow: 0 3px 0 rgba(0,0,0,.35), 0 0 24px rgba(54,241,205,.6);
+}
+#announce.show { animation: announce 2.2s ease-out forwards; }
+#announce.gold { color: #ffd34d; text-shadow: 0 3px 0 rgba(0,0,0,.35), 0 0 30px rgba(255,190,40,.9); }
+#announce.streak { color: #ff6b6b; text-shadow: 0 3px 0 rgba(0,0,0,.35), 0 0 30px rgba(255,80,80,.8); }
+#announce.leader { color: #ffe08a; }
+@keyframes announce {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.6); }
+  12% { opacity: 1; transform: translate(-50%, -50%) scale(1.12); }
+  22% { transform: translate(-50%, -50%) scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -60%) scale(1); }
+}
+
+/* Emotes */
+#emotes { position: absolute; right: calc(126px + var(--sar)); bottom: calc(26px + var(--sab)); display: flex; align-items: center; gap: 8px; pointer-events: auto; }
+#emoteBtn { width: 48px; height: 48px; border-radius: 50%; font-size: 24px; background: var(--glass); border: 1px solid var(--line); }
+#emoteRow { display: flex; gap: 6px; padding: 6px; border-radius: 30px; background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+#emoteRow button { width: 44px; height: 44px; border-radius: 50%; font-size: 24px; background: rgba(255,255,255,.08); }
+#tags .emote { position: absolute; font-size: 40px; transform: translate(-50%, -100%); background: none; padding: 0; text-shadow: 0 2px 8px rgba(0,0,0,.5); }
+#tags .emote.pop { animation: emotePop 2.6s ease-out forwards; }
+@keyframes emotePop {
+  0% { transform: translate(-50%, -60%) scale(.2); opacity: 0; }
+  10% { transform: translate(-50%, -100%) scale(1.3); opacity: 1; }
+  18% { transform: translate(-50%, -100%) scale(1); }
+  80% { opacity: 1; }
+  100% { transform: translate(-50%, -150%) scale(1); opacity: 0; }
+}
+#deathStats { font-size: 14px; opacity: .85; }

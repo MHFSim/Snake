@@ -43,6 +43,7 @@ export type ReliableMsg =
       pa: (number | string)[];
       pr: number[];
     }
+  | { t: "emote"; k: number }
   | { t: "ping"; ts: number; rtt?: number }
   | { t: "pong"; ts: number };
 
@@ -58,6 +59,8 @@ export const F_GHOST = 8;
 export const F_SHIELD = 16;
 export const F_MAGNET = 32;
 export const F_TURBO = 64;
+export const F_FAST = 128; // auf einem Boost-Pad
+export const F_DOUBLE = 256;
 
 const POS = 50; // 1/50 m
 const ANG = 10000;
@@ -111,7 +114,7 @@ export interface Snapshot {
   snakes: SnapSnake[];
 }
 
-const SNAKE_BYTES = 13;
+const SNAKE_BYTES = 14;
 
 export function encodeSnapshot(tick: number, ack: number, snakes: SnapSnake[]): ArrayBuffer {
   const buf = new ArrayBuffer(10 + snakes.length * SNAKE_BYTES);
@@ -123,12 +126,12 @@ export function encodeSnapshot(tick: number, ack: number, snakes: SnapSnake[]): 
   let o = 10;
   for (const s of snakes) {
     dv.setUint8(o, s.id);
-    dv.setUint8(o + 1, s.flags);
-    dv.setInt16(o + 2, Math.round(s.x * POS));
-    dv.setInt16(o + 4, Math.round(s.z * POS));
-    dv.setInt16(o + 6, Math.round(s.a * ANG));
-    dv.setUint32(o + 8, Math.min(0xffffffff, Math.max(0, Math.round(s.score))));
-    dv.setUint8(o + 12, Math.min(255, s.kills));
+    dv.setUint16(o + 1, s.flags);
+    dv.setInt16(o + 3, Math.round(s.x * POS));
+    dv.setInt16(o + 5, Math.round(s.z * POS));
+    dv.setInt16(o + 7, Math.round(s.a * ANG));
+    dv.setUint32(o + 9, Math.min(0xffffffff, Math.max(0, Math.round(s.score))));
+    dv.setUint8(o + 13, Math.min(255, s.kills));
     o += SNAKE_BYTES;
   }
   return buf;
@@ -144,12 +147,12 @@ export function decodeSnapshot(buf: ArrayBuffer): Snapshot {
   for (let i = 0; i < n; i++) {
     snakes.push({
       id: dv.getUint8(o),
-      flags: dv.getUint8(o + 1),
-      x: dv.getInt16(o + 2) / POS,
-      z: dv.getInt16(o + 4) / POS,
-      a: dv.getInt16(o + 6) / ANG,
-      score: dv.getUint32(o + 8),
-      kills: dv.getUint8(o + 12),
+      flags: dv.getUint16(o + 1),
+      x: dv.getInt16(o + 3) / POS,
+      z: dv.getInt16(o + 5) / POS,
+      a: dv.getInt16(o + 7) / ANG,
+      score: dv.getUint32(o + 9),
+      kills: dv.getUint8(o + 13),
     });
     o += SNAKE_BYTES;
   }

@@ -126,4 +126,72 @@ describe("World", () => {
     expect(f.orbAdded.length).toBeGreaterThan(0);
     expect(w.snakes.size).toBe(0);
   });
+
+  it("Kopf an Kopf: die längere Schlange gewinnt und bekommt den Kill", () => {
+    const w = new World(13);
+    const a = w.addPlayer(0, "A", 0);
+    const b = w.addPlayer(1, "B", 1);
+    a.protect = b.protect = 0;
+    a.score = 40;
+    b.score = 10;
+    a.x = 0; a.z = -4; a.angle = 0;
+    b.x = 0; b.z = 4; b.angle = Math.PI;
+    a.trail.resetStraight(a.x, a.z, a.angle, 40);
+    b.trail.resetStraight(b.x, b.z, b.angle, 40);
+    w.setInput(0, { angle: 0, boost: false });
+    w.setInput(1, { angle: Math.PI, boost: false });
+    w.flush();
+    for (let i = 0; i < 30 && b.alive; i++) w.step(DT);
+    expect(b.alive).toBe(false);
+    expect(a.alive).toBe(true);
+    expect(a.kills).toBe(1);
+    const ev = w.flush().events;
+    expect(ev.some((e) => e.t === "kill" && e.killer === 0 && e.victim === 1 && e.head)).toBe(true);
+  });
+
+  it("Kopf an Kopf bei gleicher Länge: immer genau ein Sieger", () => {
+    for (let seed = 1; seed < 8; seed++) {
+      const w = new World(seed);
+      const a = w.addPlayer(0, "A", 0);
+      const b = w.addPlayer(1, "B", 1);
+      a.protect = b.protect = 0;
+      a.x = 0; a.z = -4; a.angle = 0;
+      b.x = 0; b.z = 4; b.angle = Math.PI;
+      a.trail.resetStraight(a.x, a.z, a.angle, 20);
+      b.trail.resetStraight(b.x, b.z, b.angle, 20);
+      w.setInput(0, { angle: 0, boost: false });
+      w.setInput(1, { angle: Math.PI, boost: false });
+      for (let i = 0; i < 30 && a.alive && b.alive; i++) w.step(DT);
+      expect(Number(a.alive) + Number(b.alive)).toBe(1);
+    }
+  });
+
+  it("Boost-Pad macht schneller", () => {
+    const w = new World(17);
+    const pad = w.terrain.pads[0];
+    expect(w.terrain.pads.length).toBeGreaterThan(10);
+    const s = w.addPlayer(0, "A", 0);
+    s.x = pad.x; s.z = pad.z;
+    s.trail.resetStraight(s.x, s.z, s.angle, 10);
+    w.setInput(0, { angle: s.angle, boost: false });
+    const x0 = s.x, z0 = s.z;
+    w.step(DT);
+    expect(Math.hypot(s.x - x0, s.z - z0)).toBeCloseTo(CFG.padSpeed * DT, 1);
+  });
+
+  it("Goldener Orb erscheint und gibt viele Punkte", () => {
+    const w = new World(19);
+    const s = w.addPlayer(0, "A", 0);
+    w.flush();
+    for (let i = 0; i < CFG.goldFirst * CFG.tickRate + 5; i++) {
+      s.protect = 5;
+      s.x = 0; s.z = 0;
+      w.step(DT);
+    }
+    const ev = w.flush().events;
+    const gold = ev.find((e) => e.t === "gold");
+    expect(gold).toBeTruthy();
+    expect(w.goldId).toBeGreaterThan(0);
+    expect(w.orbs.get(w.goldId)!.v).toBe(CFG.goldValue);
+  });
 });

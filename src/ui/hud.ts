@@ -1,5 +1,5 @@
-import { HALF, SNAKE_COLORS, lengthFromScore } from "../core/config";
-import { F_GHOST, F_MAGNET, F_SHIELD, F_TURBO } from "../net/protocol";
+import { EMOTES, HALF, SNAKE_COLORS, lengthFromScore } from "../core/config";
+import { F_DOUBLE, F_FAST, F_GHOST, F_MAGNET, F_SHIELD, F_TURBO } from "../net/protocol";
 import type { PlayerInfo } from "../net/protocol";
 import type { Session } from "../net/session";
 import type { SimEvent } from "../sim/world";
@@ -54,7 +54,7 @@ export class Hud {
       const li = document.createElement("li");
       const a = document.createElement("span");
       a.textContent = p.name + (p.id === this.session.myId ? " (du)" : p.id === 0 ? " (Host)" : "");
-      a.style.color = SNAKE_COLORS[p.color][0];
+      a.style.color = SNAKE_COLORS[p.color % 8][0];
       const b = document.createElement("span");
       b.textContent = p.id === 0 ? "Host" : `${p.ping} ms`;
       li.append(a, b);
@@ -66,32 +66,159 @@ export class Hud {
     return this.names.get(id) ?? "Jemand";
   }
 
+  // Killserien: Kills seit dem letzten Spawn und schnelle Mehrfach-Kills
+  private streak = new Map<number, number>();
+  private multi = new Map<number, { n: number; t: number }>();
+  private leader = -1;
+  private leaderCand = -1;
+  private leaderSince = 0;
+  onAnnounce: (kind: "streak" | "gold" | "leader") => void = () => {};
+
   event(ev: SimEvent) {
     const me = this.session.myId;
     if (ev.t === "kill") {
       if (ev.killer === me) {
-        this.feed(`Du hast ${this.name(ev.victim)} erwischt!`, true);
+        this.feed(ev.head ? `Du gewinnst Kopf an Kopf gegen ${this.name(ev.victim)}!` : `Du hast ${this.name(ev.victim)} erwischt!`, true);
         navigator.vibrate?.([30, 40, 30]);
+      } else if (ev.head) {
+        this.feed(`${this.name(ev.killer)} gewinnt Kopf an Kopf gegen ${this.name(ev.victim)}`);
       } else this.feed(`${this.name(ev.killer)} hat ${this.name(ev.victim)} erwischt`);
-      if (ev.victim === me) $("deathText").textContent = `von ${this.name(ev.killer)}`;
+      if (ev.victim === me) {
+        $("deathText").textContent = ev.head ? `${this.name(ev.killer)} war länger – Kopf an Kopf verloren` : `von ${this.name(ev.killer)}`;
+      }
+      this.countKill(ev.killer);
     } else if (ev.t === "die") {
+      this.streak.set(ev.id, 0);
       if (ev.cause === "wall") this.feed(`${this.name(ev.id)} ist in die Energiewand gefahren`);
-      if (ev.cause === "head") this.feed(`${this.name(ev.id)}: Kopf an Kopf`);
       if (ev.id === me) {
         $("deathTitle").textContent = "Erwischt!";
-        $("deathText").textContent = ev.cause === "wall" ? "Die Energiewand ist tödlich" : ev.cause === "head" ? "Kopf an Kopf" : "";
+        const mine = this.session.snakes.get(me);
+        const secs = Math.round((performance.now() - this.aliveSince) / 1000);
+        $("deathStats").textContent = `Länge ${lengthFromScore(this.lastScore)} · Kills ${mine?.kills ?? 0} · überlebt ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+        $("deathText").textContent = ev.cause === "wall" ? "Die Energiewand ist tödlich" : "";
         $("death").classList.remove("hidden");
         this.deathTimer = 3;
         navigator.vibrate?.(220);
       }
-    } else if (ev.t === "spawn" && ev.id === me) {
-      $("death").classList.add("hidden");
+    } else if (ev.t === "spawn") {
+      this.streak.set(ev.id, 0);
+      if (ev.id === me) {
+        $("death").classList.add("hidden");
+        this.aliveSince = performance.now();
+      }
     } else if (ev.t === "power" && ev.id === me) {
-      const label = { magnet: "Magnet", ghost: "Geist", turbo: "Turbo", shield: "Schild" }[ev.kind];
+      const label = { magnet: "Magnet", ghost: "Geist", turbo: "Turbo", shield: "Schild", double: "Doppelte Punkte" }[ev.kind];
       this.feed(`${label} aktiv!`, true);
       navigator.vibrate?.(40);
     } else if (ev.t === "shield" && ev.id === me) {
       this.feed("Schild hat dich gerettet!", true);
+    } else if (ev.t === "emote") {
+      this.showEmote(ev.id, EMOTES[ev.k] ?? "😀");
+    } else if (ev.t === "gold") {
+      this.announce("GOLDENER ORB!", "gold");
+      this.feed("Folge der goldenen Lichtsäule – +40 Länge");
+      this.onAnnounce("gold");
+    } else if (ev.t === "goldEaten") {
+      if (ev.id === me) {
+        this.announce("+40 GOLD!", "gold");
+        navigator.vibrate?.([40, 30, 40, 30, 80]);
+      } else this.feed(`${this.name(ev.id)} hat den goldenen Orb geschnappt`);
+    }
+  }
+
+  private aliveSince = performance.now();
+  private lastScore = 0;
+  private emotes = new Map<number, { el: HTMLDivElement; until: number }>();
+
+  private showEmote(id: number, emoji: string) {
+    let e = this.emotes.get(id);
+    if (!e) {
+      const el = document.createElement("div");
+      el.className = "emote";
+      $("tags").append(el);
+      e = { el, until: 0 };
+      this.emotes.set(id, e);
+    }
+    e.el.textContent = emoji;
+    e.el.classList.remove("pop");
+    void e.el.offsetWidth;
+    e.el.classList.add("pop");
+    e.until = performance.now() + 2600;
+  }
+
+  private updateEmotes() {
+    const now = performance.now();
+    for (const [id, e] of this.emotes) {
+      const head = this.renderer.headOf(id);
+      if (now > e.until || !head) {
+        e.el.remove();
+        this.emotes.delete(id);
+        continue;
+      }
+      const p = this.renderer.project(head.x, head.y + 3.4, head.z);
+      e.el.style.display = p.visible ? "block" : "none";
+      e.el.style.left = p.x + "px";
+      e.el.style.top = p.y + "px";
+    }
+  }
+
+  private countKill(killer: number) {
+    const me = this.session.myId;
+    const st = (this.streak.get(killer) ?? 0) + 1;
+    this.streak.set(killer, st);
+    const now = performance.now();
+    const m = this.multi.get(killer);
+    const n = m && now - m.t < 4000 ? m.n + 1 : 1;
+    this.multi.set(killer, { n, t: now });
+    const multiText = n === 2 ? "DOPPEL-KILL!" : n === 3 ? "TRIPLE-KILL!" : n >= 4 ? "MEGA-KILL!" : "";
+    const streakText = st === 3 ? "KILLSERIE!" : st === 5 ? "UNAUFHALTSAM!" : st >= 8 && st % 2 === 0 ? "LEGENDÄR!" : "";
+    if (killer === me) {
+      const text = multiText || streakText;
+      if (text) {
+        this.announce(text, "streak");
+        this.onAnnounce("streak");
+      }
+    } else if (multiText || streakText) {
+      this.feed(`${this.name(killer)}: ${(multiText || streakText).toLowerCase().replace("!", "")} (${st} in Folge)`);
+    }
+  }
+
+  announce(text: string, kind: "streak" | "gold" | "leader") {
+    const el = $("announce");
+    el.textContent = text;
+    el.className = "";
+    void el.offsetWidth; // Animation neu starten
+    el.className = "show " + kind;
+  }
+
+  private checkLeader() {
+    const s = this.session;
+    let best = -1;
+    let bestScore = 0;
+    let alive = 0;
+    for (const r of s.snakes.values()) {
+      if (!r.alive) continue;
+      alive++;
+      if (r.score > bestScore) {
+        bestScore = r.score;
+        best = r.id;
+      }
+    }
+    if (alive < 2) return;
+    const now = performance.now();
+    if (best !== this.leaderCand) {
+      this.leaderCand = best;
+      this.leaderSince = now;
+      return;
+    }
+    if (best >= 0 && best !== this.leader && now - this.leaderSince > 1500) {
+      const first = this.leader < 0;
+      this.leader = best;
+      if (first) return;
+      if (best === s.myId) {
+        this.announce("DU FÜHRST! 👑", "leader");
+        this.onAnnounce("leader");
+      } else this.feed(`👑 ${this.name(best)} übernimmt die Führung`);
     }
   }
 
@@ -115,6 +242,8 @@ export class Hud {
     }
 
     this.updateTags();
+    this.updateEmotes();
+    if (me && me.alive) this.lastScore = me.score;
 
     this.slowTimer += dt;
     if (this.slowTimer < 0.2) return;
@@ -130,6 +259,8 @@ export class Hud {
       if (me.flags & F_GHOST) p.push("👻 Geist");
       if (me.flags & F_TURBO) p.push("⚡ Turbo");
       if (me.flags & F_SHIELD) p.push("🛡️ Schild");
+      if (me.flags & F_DOUBLE) p.push("✖2 Punkte");
+      if (me.flags & F_FAST) p.push("🔥 Pad-Boost");
       const pw = $("powers");
       const html = p.map((x) => `<div>${x}</div>`).join("");
       if (pw.innerHTML !== html) pw.innerHTML = html;
@@ -153,6 +284,7 @@ export class Hud {
       const e = this.renderer.engine;
       $("debug").textContent = `${this.renderer.fps.toFixed(0)} FPS  ${this.renderer.quality}\n${e.getRenderWidth()}x${e.getRenderHeight()}  meshes ${this.renderer.scene.getActiveMeshes().length}`;
     }
+    this.checkLeader();
     this.drawMinimap(ranked[0]?.id ?? -1);
   }
 
@@ -195,6 +327,19 @@ export class Hud {
     if (this.mapBg) ctx.drawImage(this.mapBg, 0, 0, W, W);
     const toX = (x: number) => ((x + HALF) / (HALF * 2)) * W;
     const toY = (z: number) => (1 - (z + HALF) / (HALF * 2)) * W;
+    // Boost-Pads
+    ctx.fillStyle = "rgba(255,150,40,0.9)";
+    for (const p of this.session.terrain.pads) ctx.fillRect(toX(p.x) - 2.5, toY(p.z) - 2.5, 5, 5);
+    // Goldener Orb: pulsierender Stern
+    const g = this.renderer.goldPos();
+    if (g) {
+      const pulse = 1 + Math.sin(performance.now() / 150) * 0.25;
+      ctx.font = `${Math.round(30 * pulse)}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("⭐", toX(g.x), toY(g.z));
+      ctx.textBaseline = "alphabetic";
+    }
     for (const p of this.renderer.powList()) {
       ctx.fillStyle = "#fff";
       ctx.fillRect(toX(p.x) - 4, toY(p.z) - 4, 8, 8);

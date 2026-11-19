@@ -1,9 +1,10 @@
 import {
   Color3, Color4, Mesh, MeshBuilder, ParticleSystem, PBRMaterial, Scene, StandardMaterial, Texture, Vector3,
 } from "@babylonjs/core";
-import { CFG, SNAKE_COLORS, lengthFromScore, radiusFromLength } from "../core/config";
+import { CFG, SNAKE_COLORS, colorOf, lengthFromScore, radiusFromLength, skinOf } from "../core/config";
+import { makeScaleNormal } from "./textures";
 import { Trail } from "../sim/trail";
-import { F_BOOST, F_GHOST, F_PROTECT, F_SHIELD } from "../net/protocol";
+import { F_BOOST, F_FAST, F_GHOST, F_PROTECT, F_SHIELD } from "../net/protocol";
 import type { RSnake } from "../net/session";
 import type { TerrainView } from "./terrainView";
 
@@ -27,12 +28,14 @@ export class SnakeView {
   private colB: Color3;
   private colAg: Color3;
   visible = false;
+  private skin = 0;
   headY = 0;
   private emissive = 0;
   private lastTail = new Vector3();
 
   constructor(scene: Scene, readonly id: number, colorIdx: number, particleTex: Texture) {
-    const pair = SNAKE_COLORS[colorIdx % SNAKE_COLORS.length];
+    const pair = SNAKE_COLORS[colorOf(colorIdx)];
+    this.skin = skinOf(colorIdx);
     this.colAg = Color3.FromHexString(pair[0]);
     this.colA = lin(this.colAg);
     this.colB = lin(Color3.FromHexString(pair[1]));
@@ -45,6 +48,13 @@ export class SnakeView {
     this.mat.clearCoat.intensity = 0.9;
     this.mat.clearCoat.roughness = 0.06;
     this.mat.environmentIntensity = 0.9;
+    // Schuppen-Relief (eine Textur für alle Schlangen)
+    const meta = (scene.metadata ??= {}) as { scaleBump?: Texture };
+    const bump = (meta.scaleBump ??= makeScaleNormal(scene));
+    this.mat.bumpTexture = bump;
+    bump.uScale = 5;
+    bump.vScale = 3;
+    bump.level = 0.9;
 
     this.headMat = this.mat.clone("snakeHeadMat" + id);
     this.headMat.albedoColor = this.colA.clone();
@@ -78,6 +88,12 @@ export class SnakeView {
       p.parent = this.head;
       p.position.set(sx * 0.55, 0.5, 0.8);
       p.isPickable = false;
+      // Glanzpunkt im Auge
+      const hl = MeshBuilder.CreateSphere("eyeHl", { diameter: 0.11, segments: 6 }, scene);
+      hl.material = white;
+      hl.parent = this.head;
+      hl.position.set(sx * 0.6, 0.6, 0.93);
+      hl.isPickable = false;
     }
 
     this.shield = MeshBuilder.CreateSphere("shield" + id, { diameter: 2, segments: 16 }, scene);
@@ -155,7 +171,7 @@ export class SnakeView {
     this.setVisible(false);
   }
 
-  update(rs: RSnake, time: number, terrain: TerrainView) {
+  update(rs: RSnake, time: number, terrain: TerrainView, night = 0) {
     if (!rs.alive) {
       if (this.visible) this.setVisible(false);
       return;
@@ -194,10 +210,35 @@ export class SnakeView {
       m[o + 13] = this.pts[k * 3 + 1] + s * 0.78;
       m[o + 14] = this.pts[k * 3 + 2];
       m[o + 15] = 1;
-      const stripe = 1 + 0.22 * Math.sin(k * spacing * 1.25);
-      c[k * 4] = (A.r + (B.r - A.r) * f) * stripe;
-      c[k * 4 + 1] = (A.g + (B.g - A.g) * f) * stripe;
-      c[k * 4 + 2] = (A.b + (B.b - A.b) * f) * stripe;
+      const d = k * spacing;
+      let cr: number, cg: number, cb: number;
+      if (this.skin === 1) {
+        // harte Streifen in beiden Farben
+        const on = Math.floor(d / 1.5) % 2 === 0;
+        const P = on ? A : B;
+        cr = P.r; cg = P.g; cb = P.b;
+      } else if (this.skin === 2) {
+        // Tiger: Verlauf mit dunklen Bändern
+        const band = Math.sin(d * 2.1) > 0.45 ? 0.08 : 1;
+        cr = (A.r + (B.r - A.r) * f) * band;
+        cg = (A.g + (B.g - A.g) * f) * band;
+        cb = (A.b + (B.b - A.b) * f) * band;
+      } else if (this.skin === 3) {
+        // Regenbogen, läuft durch den Körper
+        const hgl = d * 0.09 - time * 0.6;
+        cr = 0.5 + 0.5 * Math.cos(6.283 * hgl);
+        cg = 0.5 + 0.5 * Math.cos(6.283 * (hgl + 0.33));
+        cb = 0.5 + 0.5 * Math.cos(6.283 * (hgl + 0.67));
+        cr *= cr; cg *= cg; cb *= cb;
+      } else {
+        const stripe = 1 + 0.22 * Math.sin(d * 1.25);
+        cr = (A.r + (B.r - A.r) * f) * stripe;
+        cg = (A.g + (B.g - A.g) * f) * stripe;
+        cb = (A.b + (B.b - A.b) * f) * stripe;
+      }
+      c[k * 4] = cr;
+      c[k * 4 + 1] = cg;
+      c[k * 4 + 2] = cb;
       c[k * 4 + 3] = 1;
     }
     this.body.thinInstanceCount = got;
@@ -213,10 +254,10 @@ export class SnakeView {
     this.head.scaling.set(r * 1.18, r * 0.98, r * 1.32);
 
     // Zustände
-    const boosting = (rs.flags & F_BOOST) !== 0;
+    const boosting = (rs.flags & (F_BOOST | F_FAST)) !== 0;
     const target = boosting ? 1 : 0;
     this.emissive += (target - this.emissive) * 0.15;
-    const e = this.emissive * 0.9 + 0.05;
+    const e = this.emissive * 0.9 + 0.05 + night * 0.35;
     this.mat.emissiveColor.set(this.colA.r * e, this.colA.g * e, this.colA.b * e);
     this.headMat.emissiveColor.copyFrom(this.mat.emissiveColor);
     const ghost = (rs.flags & F_GHOST) !== 0;

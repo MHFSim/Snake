@@ -14,6 +14,16 @@ Jeder Push auf `main` baut das Spiel und stellt es automatisch auf GitHub Pages 
 
 Orbs fressen macht länger. Wer mit dem Kopf gegen einen fremden Körper fährt, stirbt und zerfällt in Orbs. Power-ups: Magnet, Geist, Turbo, Schild.
 
+## Was es gibt
+
+- **Kopf an Kopf:** Die längere Schlange gewinnt und bekommt den Kill (bei Gleichstand die boostende, sonst Zufall).
+- **Goldener Orb:** erscheint regelmäßig mit Lichtsäule und gibt +40 Länge.
+- **Boost-Pads:** orange Pfeile am Boden, kurzer Gratis-Schub.
+- **Power-ups:** Magnet, Geist, Turbo, Schild, Doppelte Punkte.
+- **Killserien, Krone für den Anführer, Killcam, Emotes, 4 Muster** für die Schlange.
+- **Tag und Nacht** (6 Minuten pro Tag, für alle gleich), Wolken, Sterne, Glühwürmchen, leuchtende Pilze.
+- **Ton** komplett per WebAudio, im Menü abschaltbar.
+
 ## Starten (Entwicklung)
 
 ```bash

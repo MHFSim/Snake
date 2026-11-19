@@ -2,7 +2,7 @@ import { CFG } from "../core/config";
 import { World, Snake } from "../sim/world";
 import type { Terrain } from "../sim/terrain";
 import {
-  F_ALIVE, F_BOOST, F_GHOST, F_MAGNET, F_PROTECT, F_SHIELD, F_TURBO,
+  F_ALIVE, F_BOOST, F_DOUBLE, F_FAST, F_GHOST, F_MAGNET, F_PROTECT, F_SHIELD, F_TURBO,
   InputRec, PlayerInfo, ReliableMsg, SnapSnake,
   decodeInputs, encodeSnapshot, makeRoomCode, orbsToArr, powToArr, MSG_INPUT,
 } from "./protocol";
@@ -24,6 +24,7 @@ interface RemotePlayer {
   lastSeen: number;
   ping: number;
   joined: boolean;
+  lastEmote: number;
 }
 
 export function snakeFlags(s: Snake): number {
@@ -35,6 +36,8 @@ export function snakeFlags(s: Snake): number {
   if (s.power.shield > 0) f |= F_SHIELD;
   if (s.power.magnet > 0) f |= F_MAGNET;
   if (s.power.turbo > 0) f |= F_TURBO;
+  if (s.padTimer > 0) f |= F_FAST;
+  if (s.power.double > 0) f |= F_DOUBLE;
   return f;
 }
 
@@ -102,6 +105,10 @@ export class HostSession implements Session {
     this.world.setInput(0, { angle, boost });
   }
 
+  sendEmote(k: number) {
+    this.world.events.push({ t: "emote", id: 0, k });
+  }
+
   // ---------- Netzwerk ----------
 
   private onLink(link: ClientLink) {
@@ -130,15 +137,23 @@ export class HostSession implements Session {
           return;
         }
         const name = this.uniqueName(String(msg.name || "Spieler").slice(0, 14));
-        const color = Math.max(0, Math.min(7, Math.floor(Number(msg.color) || 0)));
+        const color = Math.max(0, Math.min(31, Math.floor(Number(msg.color) || 0)));
         const rp: RemotePlayer = {
           id, link, name, color, queue: [], lastQueued: 0, lastSeq: 0,
-          lastSeen: performance.now(), ping: 0, joined: true,
+          lastSeen: performance.now(), ping: 0, joined: true, lastEmote: 0,
         };
         this.remotes.set(link.peerId, rp);
         this.world.addPlayer(id, name, color);
         this.sendWelcome(rp);
         this.updatePlayers();
+        break;
+      }
+      case "emote": {
+        const now = performance.now();
+        if (r && now - r.lastEmote > 800) {
+          r.lastEmote = now;
+          this.world.events.push({ t: "emote", id: r.id, k: Math.max(0, Math.min(5, Math.floor(Number(msg.k) || 0))) });
+        }
         break;
       }
       case "ping": {
@@ -306,6 +321,11 @@ export class HostSession implements Session {
       r.kills = s.kills;
       r.flags = snakeFlags(s);
     }
+  }
+
+  serverTime(nowMs: number): number {
+    const alpha = Math.min(1, Math.max(0, (nowMs - this.lastTickTime2) / (1000 / CFG.tickRate)));
+    return (this.world.tick + alpha) / CFG.tickRate;
   }
 
   dispose() {

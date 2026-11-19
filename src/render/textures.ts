@@ -175,3 +175,145 @@ export function makeSunTexture(scene: Scene): Texture {
   tex.update(false);
   return tex;
 }
+
+// Leuchtende Pfeile für Boost-Pads
+export function makePadTexture(scene: Scene): Texture {
+  const size = 128;
+  const tex = new DynamicTexture("padTex", { width: size, height: size }, scene, true);
+  const ctx = tex.getContext() as CanvasRenderingContext2D;
+  ctx.clearRect(0, 0, size, size);
+  ctx.strokeStyle = "rgba(255,255,255,1)";
+  ctx.lineWidth = 14;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const y of [22, 86]) {
+    ctx.beginPath();
+    ctx.moveTo(24, y + 30);
+    ctx.lineTo(64, y);
+    ctx.lineTo(104, y + 30);
+    ctx.stroke();
+  }
+  tex.hasAlpha = true;
+  tex.update(true);
+  tex.wrapU = Texture.CLAMP_ADDRESSMODE;
+  tex.wrapV = Texture.WRAP_ADDRESSMODE;
+  return tex;
+}
+
+// Sternenhimmel (equirektangulär)
+export function makeStarTexture(scene: Scene, seed: number): Texture {
+  const w = 1024, h = 512;
+  const tex = new DynamicTexture("stars", { width: w, height: h }, scene, true);
+  const ctx = tex.getContext() as CanvasRenderingContext2D;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, w, h);
+  let s = seed >>> 0;
+  const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  for (let i = 0; i < 1400; i++) {
+    const x = rnd() * w;
+    const y = rnd() * h * 0.5; // nur obere Hälfte
+    const b = rnd();
+    const r = b > 0.97 ? 1.6 : b > 0.85 ? 1.1 : 0.7;
+    const a = 0.4 + rnd() * 0.6;
+    ctx.fillStyle = `rgba(${200 + rnd() * 55},${210 + rnd() * 45},255,${a})`;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  tex.update(true);
+  return tex;
+}
+
+// Schuppen-Relief für die Schlangenhaut
+export function makeScaleNormal(scene: Scene): Texture {
+  const size = 128;
+  const h = new Float32Array(size * size);
+  const cell = 32;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let best = 0;
+      for (let oy = -1; oy <= 1; oy++) {
+        const row = Math.floor(y / cell) + oy;
+        const off = (((row % 2) + 2) % 2) * (cell / 2);
+        for (let ox = -1; ox <= 1; ox++) {
+          const col = Math.floor((x - off) / cell) + ox;
+          const cx = col * cell + off + cell / 2;
+          const cy = row * cell + cell / 2;
+          const d = Math.hypot(x - cx, (y - cy) * 0.8) / (cell * 0.62);
+          best = Math.max(best, 1 - d * d);
+        }
+      }
+      h[y * size + x] = Math.max(0, best);
+    }
+  }
+  const tex = new DynamicTexture("scaleBump", { width: size, height: size }, scene, true);
+  const ctx = tex.getContext() as CanvasRenderingContext2D;
+  const img = ctx.createImageData(size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const g = (xx: number, yy: number) => h[((yy + size) % size) * size + ((xx + size) % size)];
+      let nx = (g(x - 1, y) - g(x + 1, y)) * 4;
+      let ny = (g(x, y - 1) - g(x, y + 1)) * 4;
+      const l = Math.hypot(nx, ny, 1);
+      nx /= l; ny /= l;
+      const i = (y * size + x) * 4;
+      img.data[i] = (nx * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (ny * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (1 / l) * 0.5 * 255 + 127;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  tex.update(false);
+  tex.wrapU = tex.wrapV = Texture.WRAP_ADDRESSMODE;
+  return tex;
+}
+
+// Wolken (obere Hälfte = Himmel, zum Horizont und Zenit hin ausgeblendet)
+export function makeCloudTexture(scene: Scene, seed: number): Texture {
+  const size = 512;
+  const n = fbmTile(size, seed, [4, 8, 16, 32, 64], [1, 0.7, 0.45, 0.25, 0.12]);
+  const tex = new DynamicTexture("clouds", { width: size, height: size }, scene, true);
+  const ctx = tex.getContext() as CanvasRenderingContext2D;
+  const img = ctx.createImageData(size, size);
+  for (let y = 0; y < size; y++) {
+    const v = y / size; // 0 = Zenit, 0.5 = Horizont
+    const band = Math.max(0, Math.min(1, (v - 0.12) / 0.15)) * Math.max(0, Math.min(1, (0.485 - v) / 0.07));
+    for (let x = 0; x < size; x++) {
+      const d = Math.max(0, Math.min(1, (n[y * size + x] - 0.5) / 0.16));
+      const a = d * d * (3 - 2 * d) * band;
+      const shade = 215 + 40 * Math.min(1, (n[y * size + x] - 0.5) * 5);
+      const i = (y * size + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = shade;
+      img.data[i + 3] = a * 235;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  tex.hasAlpha = true;
+  tex.update(false);
+  tex.wrapU = Texture.WRAP_ADDRESSMODE;
+  tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+  return tex;
+}
+
+// Weicher Lichtfleck als Bild-Adresse (für Linsenreflexe)
+export function makeFlareUrl(ring: boolean): string {
+  const size = 128;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = size;
+  const ctx = cv.getContext("2d")!;
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  if (ring) {
+    g.addColorStop(0, "rgba(255,255,255,0)");
+    g.addColorStop(0.7, "rgba(255,255,255,0.05)");
+    g.addColorStop(0.86, "rgba(255,255,255,0.5)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+  } else {
+    g.addColorStop(0, "rgba(255,255,255,0.9)");
+    g.addColorStop(0.3, "rgba(255,255,255,0.35)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+  }
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  return cv.toDataURL("image/png");
+}

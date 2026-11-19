@@ -1,6 +1,7 @@
 import "./style.css";
 import { AbstractEngine, Engine, WebGPUEngine } from "@babylonjs/core";
-import { SNAKE_COLORS } from "./core/config";
+import { EMOTES, SKINS, SNAKE_COLORS } from "./core/config";
+import { Terrain } from "./sim/terrain";
 import { HostSession } from "./net/host";
 import { ClientSession } from "./net/client";
 import { normalizeCode } from "./net/protocol";
@@ -8,6 +9,8 @@ import type { Session } from "./net/session";
 import { GameRenderer, Quality } from "./render/renderer";
 import { Controls } from "./input/controls";
 import { Hud } from "./ui/hud";
+import { Sfx } from "./audio/sfx";
+import { F_BOOST, F_FAST } from "./net/protocol";
 import type { PlayerInfo } from "./net/protocol";
 import type { SimEvent } from "./sim/world";
 
@@ -38,12 +41,68 @@ let session: Session | null = null;
 let hud: Hud | null = null;
 let controls: Controls;
 let myColor = 0;
+let mySkin = 0;
+let menuRenderer: GameRenderer | null = null;
+
+// 3D-Welt hinter dem Startmenü
+function startMenuWorld() {
+  if (menuRenderer || session) return;
+  try {
+    const r = makeRenderer();
+    r.attachMenu(new Terrain((Math.random() * 0xffffffff) >>> 0));
+    menuRenderer = r;
+    document.body.classList.add("menu3d");
+  } catch (e) {
+    console.warn("Menü-Welt nicht verfügbar", e);
+  }
+}
+
+function stopMenuWorld() {
+  menuRenderer?.dispose();
+  menuRenderer = null;
+  document.body.classList.remove("menu3d");
+}
 let wakeLock: { release(): Promise<void> } | null = null;
+const sfx = new Sfx();
+
+function playEventSound(ev: SimEvent) {
+  const me = session?.myId;
+  switch (ev.t) {
+    case "kill":
+      if (ev.killer === me) sfx.kill();
+      break;
+    case "die":
+      if (ev.id === me) sfx.die();
+      break;
+    case "power":
+      if (ev.id === me) sfx.power();
+      break;
+    case "shield":
+      if (ev.id === me) sfx.shield();
+      break;
+    case "pad":
+      if (ev.id === me) sfx.pad();
+      break;
+    case "gold":
+      sfx.goldSpawn();
+      break;
+    case "spawn":
+      if (ev.id === me) sfx.spawn();
+      break;
+  }
+}
+
+function updateSoundButtons() {
+  document.querySelectorAll<HTMLButtonElement>("#soundSeg button").forEach((b) =>
+    b.classList.toggle("sel", (b.dataset.s === "1") === sfx.enabled),
+  );
+}
 
 function savePrefs(name: string) {
   try {
     localStorage.setItem("sa3d-name", name);
     localStorage.setItem("sa3d-color", String(myColor));
+    localStorage.setItem("sa3d-skin", String(mySkin));
   } catch { /* egal */ }
 }
 
@@ -51,6 +110,7 @@ function loadPrefs() {
   try {
     $<HTMLInputElement>("nameInput").value = localStorage.getItem("sa3d-name") || "";
     myColor = Number(localStorage.getItem("sa3d-color") || Math.floor(Math.random() * 8)) % 8;
+    mySkin = Number(localStorage.getItem("sa3d-skin") || 0) % SKINS.length;
   } catch {
     myColor = 0;
   }
@@ -71,6 +131,36 @@ function buildColorPicker() {
     };
     box.append(btn);
   });
+}
+
+function buildSkinPicker() {
+  const box = $("skinSeg");
+  box.innerHTML = "";
+  SKINS.forEach((name, i) => {
+    const b = document.createElement("button");
+    b.textContent = name;
+    if (i === mySkin) b.classList.add("sel");
+    b.onclick = () => {
+      mySkin = i;
+      box.querySelectorAll("button").forEach((x) => x.classList.remove("sel"));
+      b.classList.add("sel");
+    };
+    box.append(b);
+  });
+}
+
+function buildEmotes() {
+  const row = $("emoteRow");
+  EMOTES.forEach((e, i) => {
+    const b = document.createElement("button");
+    b.textContent = e;
+    b.onclick = () => {
+      session?.sendEmote(i);
+      row.classList.add("hidden");
+    };
+    row.append(b);
+  });
+  $("emoteBtn").onclick = () => row.classList.toggle("hidden");
 }
 
 function playerName(): string {
@@ -109,7 +199,11 @@ async function goFullscreen() {
 
 function makeRenderer(): GameRenderer {
   return new GameRenderer(engine, {
-    event: (ev: SimEvent) => hud?.event(ev),
+    event: (ev: SimEvent) => {
+      hud?.event(ev);
+      playEventSound(ev);
+    },
+    eat: (v: number) => sfx.eat(v),
     players: (list: PlayerInfo[]) => hud?.players(list),
     disconnected: (reason: string) => {
       endGame();
@@ -127,6 +221,7 @@ function startPlaying(s: Session, r: GameRenderer) {
   renderer = r;
   if (new URLSearchParams(location.search).has("debug")) (window as unknown as Record<string, unknown>).__game = { s, r };
   hud = new Hud(s, r);
+  hud.onAnnounce = () => sfx.fanfare();
   hud.players(s.players);
   $("menu").classList.add("hidden");
   document.body.classList.add("playing");
@@ -135,13 +230,15 @@ function startPlaying(s: Session, r: GameRenderer) {
 }
 
 async function hostGame(online: boolean) {
+  sfx.unlock();
   $("menuError").textContent = "";
   savePrefs(playerName());
   void goFullscreen();
   showLoading("Welt wird gebaut …");
   await new Promise((r) => setTimeout(r, 30));
   const r = makeRenderer();
-  const s = new HostSession(playerName(), myColor, r);
+  stopMenuWorld();
+  const s = new HostSession(playerName(), myColor + 8 * mySkin, r);
   r.attach(s);
   try {
     if (online) showLoading("Raum wird geöffnet …");
@@ -151,6 +248,7 @@ async function hostGame(online: boolean) {
     s.dispose();
     r.dispose();
     showLoading(null);
+    setTimeout(startMenuWorld, 300);
     $("menuError").textContent =
       "Raum konnte nicht geöffnet werden. Mehrspieler braucht Internet und eine normale Webseite (in der Claude-Vorschau ist das gesperrt).";
     return;
@@ -160,6 +258,7 @@ async function hostGame(online: boolean) {
 }
 
 async function joinGame(code: string) {
+  sfx.unlock();
   $("menuError").textContent = "";
   code = normalizeCode(code);
   if (code.length !== 6) {
@@ -172,7 +271,7 @@ async function joinGame(code: string) {
   const r = makeRenderer();
   const s = new ClientSession(code, r);
   try {
-    await s.join(playerName(), myColor);
+    await s.join(playerName(), myColor + 8 * mySkin);
   } catch (e) {
     s.dispose();
     r.dispose();
@@ -189,12 +288,14 @@ async function joinGame(code: string) {
   }
   showLoading("Welt wird gebaut …");
   await new Promise((res) => setTimeout(res, 30));
+  stopMenuWorld();
   r.attach(s);
   s.begin();
   startPlaying(s, r);
 }
 
 function endGame() {
+  sfx.setBoost(false);
   hud?.dispose();
   hud = null;
   session?.dispose();
@@ -205,6 +306,7 @@ function endGame() {
   document.body.classList.remove("playing");
   $("pause").classList.add("hidden");
   $("menu").classList.remove("hidden");
+  setTimeout(startMenuWorld, 300);
   wakeLock?.release().catch(() => {});
   wakeLock = null;
 }
@@ -214,6 +316,8 @@ function endGame() {
 async function main() {
   loadPrefs();
   buildColorPicker();
+  buildSkinPicker();
+  buildEmotes();
   engine = await createEngine();
   controls = new Controls($("touch"), $("stickBase"), $("stickKnob"), $("boostBtn"));
   controls.enabled = false;
@@ -231,6 +335,16 @@ async function main() {
   $("menuBtn").onclick = () => $("pause").classList.remove("hidden");
   $("resumeBtn").onclick = () => $("pause").classList.add("hidden");
   $("leaveBtn").onclick = () => endGame();
+  updateSoundButtons();
+  document.querySelectorAll<HTMLButtonElement>("#soundSeg button").forEach((b) => {
+    b.onclick = () => {
+      sfx.unlock();
+      sfx.setEnabled(b.dataset.s === "1");
+      updateSoundButtons();
+    };
+  });
+  // Browser erlauben Ton erst nach einer Berührung
+  window.addEventListener("pointerdown", () => sfx.unlock(), { once: true });
   document.querySelectorAll<HTMLButtonElement>("#qualitySeg button").forEach((b) => {
     b.onclick = () => renderer?.applyQuality(b.dataset.q as Quality, true);
   });
@@ -272,18 +386,26 @@ async function main() {
     }
   });
 
+  setTimeout(startMenuWorld, 200);
   let last = performance.now();
   engine.runRenderLoop(() => {
     const now = performance.now();
     const dt = now - last;
     last = now;
-    if (!session || !renderer) return;
+    if (!session || !renderer) {
+      if (menuRenderer && $("loading").classList.contains("hidden")) {
+        menuRenderer.frameMenu(dt);
+        menuRenderer.scene.render();
+      }
+      return;
+    }
     // Eingabe -> Spiel
     const me = session.snakes.get(session.myId);
     if (me && me.alive) {
       const target = controls.target(renderer.cameraYaw, me.angle);
       session.setInput(target, controls.isBoost());
     }
+    sfx.setBoost(!!me && me.alive && (me.flags & (F_BOOST | F_FAST)) !== 0);
     session.update(now);
     renderer.frame(dt);
     hud?.update(dt / 1000);
