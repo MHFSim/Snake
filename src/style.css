@@ -14,7 +14,7 @@
 html, body {
   margin: 0; height: 100%; overflow: hidden; background: #0b1020; color: var(--text);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  user-select: none; -webkit-user-select: none; overscroll-behavior: none;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; overscroll-behavior: none;
 }
 canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
 .hidden { display: none !important; }
@@ -192,3 +192,7 @@ h2 { margin: 0 0 12px; }
   100% { transform: translate(-50%, -150%) scale(1); opacity: 0; }
 }
 #deathStats { font-size: 14px; opacity: .85; }
+
+/* iOS: kein Markieren, keine Lupe, kein Kontextmenü bei langem Drücken */
+#boostBtn, #boostBtn *, #touch, #hud, #emoteBtn { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+#boostBtn span { pointer-events: none; }

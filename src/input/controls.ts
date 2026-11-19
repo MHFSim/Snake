@@ -21,36 +21,80 @@ export class Controls {
     area.addEventListener("pointermove", (e) => this.move(e));
     area.addEventListener("pointerup", (e) => this.up(e));
     area.addEventListener("pointercancel", (e) => this.up(e));
+    // Maus/Stift: Pointer Events
     boostBtn.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "touch") return; // Finger laufen über Touch Events (siehe unten)
       e.preventDefault();
-      boostBtn.setPointerCapture(e.pointerId);
       this.boostPointers.add(e.pointerId);
       boostBtn.classList.add("on");
     });
     const off = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return;
       this.boostPointers.delete(e.pointerId);
-      if (!this.boostPointers.size) boostBtn.classList.remove("on");
+      boostBtn.classList.toggle("on", this.boostPointers.size > 0 || this.touchBoost);
     };
-    boostBtn.addEventListener("pointerup", off);
-    boostBtn.addEventListener("pointercancel", off);
+    window.addEventListener("pointerup", off);
+    window.addEventListener("pointercancel", off);
+
+    // Finger: Der Zustand wird bei jeder Änderung aus den aktiven Berührungen neu berechnet.
+    // So kann der Knopf nicht hängen bleiben, auch wenn iOS bei langem Drücken ein Ende-Ereignis verschluckt.
+    const sync = (e: TouchEvent) => {
+      let boost = false;
+      let stick = false;
+      for (let i = 0; i < e.touches.length; i++) {
+        const t = e.touches[i].target as Node | null;
+        if (t && boostBtn.contains(t)) boost = true;
+        if (t === area) stick = true;
+      }
+      this.touchBoost = boost;
+      boostBtn.classList.toggle("on", boost || this.boostPointers.size > 0);
+      if (!stick && this.stickId >= 0 && this.stickIsTouch) this.release();
+    };
+    // preventDefault verhindert Lupe, Textauswahl und Kontextmenü bei langem Drücken auf iOS
+    boostBtn.addEventListener("touchstart", (e) => { e.preventDefault(); sync(e); }, { passive: false });
+    boostBtn.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
+    window.addEventListener("touchstart", sync, { passive: true });
+    window.addEventListener("touchend", sync, { passive: true });
+    window.addEventListener("touchcancel", sync, { passive: true });
+    boostBtn.addEventListener("contextmenu", (e) => e.preventDefault());
+    area.addEventListener("contextmenu", (e) => e.preventDefault());
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) this.reset(boostBtn);
+    });
     window.addEventListener("keydown", (e) => {
       if ((e.target as HTMLElement)?.tagName === "INPUT") return;
       this.keys.add(e.code);
       if (e.code === "Space") e.preventDefault();
     });
     window.addEventListener("keyup", (e) => this.keys.delete(e.code));
-    window.addEventListener("blur", () => {
-      this.keys.clear();
-      this.boostPointers.clear();
-      boostBtn.classList.remove("on");
-    });
+    window.addEventListener("blur", () => this.reset(boostBtn));
+  }
+  private touchBoost = false;
+  private stickIsTouch = false;
+
+  private reset(boostBtn: HTMLElement) {
+    this.keys.clear();
+    this.boostPointers.clear();
+    this.touchBoost = false;
+    boostBtn.classList.remove("on");
+    this.release();
+  }
+
+  private release() {
+    this.stickId = -1;
+    this.dx = this.dy = 0;
+    this.base.classList.remove("show");
+    this.knob.classList.remove("show");
   }
 
   private down(e: PointerEvent) {
     if (!this.enabled || this.stickId >= 0) return;
     // ganze Fläche außer der Boost-Ecke steuert
     this.stickId = e.pointerId;
-    this.area.setPointerCapture(e.pointerId);
+    this.stickIsTouch = e.pointerType === "touch";
+    try {
+      this.area.setPointerCapture(e.pointerId);
+    } catch { /* manche Browser erlauben das nicht */ }
     this.ox = e.clientX;
     this.oy = e.clientY;
     this.dx = this.dy = 0;
@@ -81,10 +125,7 @@ export class Controls {
 
   private up(e: PointerEvent) {
     if (e.pointerId !== this.stickId) return;
-    this.stickId = -1;
-    this.dx = this.dy = 0;
-    this.base.classList.remove("show");
-    this.knob.classList.remove("show");
+    this.release();
   }
 
   // Zielrichtung in Weltkoordinaten. camYaw = Blickrichtung der Kamera, current = aktuelle Richtung der Schlange.
@@ -100,7 +141,7 @@ export class Controls {
 
   isBoost(): boolean {
     return (
-      this.boostPointers.size > 0 ||
+      this.boostPointers.size > 0 || this.touchBoost ||
       this.keys.has("Space") || this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") ||
       this.keys.has("KeyW") || this.keys.has("ArrowUp")
     );
