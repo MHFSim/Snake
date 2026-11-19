@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b1020" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Snake Arena 3D</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1020'/%3E%3Cpath d='M14 44c8 0 8-12 18-12s10 12 18 12' stroke='%2336f1cd' stroke-width='9' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='50' cy='44' r='7' fill='%2336f1cd'/%3E%3C/svg%3E" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+  </head>
+  <body>
+    <canvas id="game" touch-action="none"></canvas>
+
+    <!-- Steuerfläche + Joystick -->
+    <div id="touch"></div>
+    <div id="stickBase" class="stick"></div>
+    <div id="stickKnob" class="stick knob"></div>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+      <div id="stats" class="glass">
+        <button id="menuBtn" class="icon" aria-label="Menü">☰</button>
+        <div><b id="statLen">10</b><span>Länge</span></div>
+        <div><b id="statRank">1/1</b><span>Rang</span></div>
+        <div><b id="statKills">0</b><span>Kills</span></div>
+      </div>
+      <div id="room" class="glass hidden"><span>Raum</span><b id="roomCode">------</b><button id="shareBtn" class="small">Teilen</button></div>
+      <div id="right">
+        <canvas id="minimap" width="280" height="280"></canvas>
+        <ol id="board" class="glass"></ol>
+      </div>
+      <div id="feed"></div>
+      <div id="powers"></div>
+      <div id="ping" class="hidden"></div>
+      <div id="debug" class="hidden"></div>
+      <button id="boostBtn" aria-label="Boost"><span>BOOST</span></button>
+      <div id="tags"></div>
+    </div>
+
+    <!-- Tod -->
+    <div id="death" class="overlay hidden">
+      <div class="deathBox">
+        <h2 id="deathTitle">Erwischt!</h2>
+        <p id="deathText"></p>
+        <div id="deathCount">3</div>
+      </div>
+    </div>
+
+    <!-- Startmenü -->
+    <div id="menu" class="screen">
+      <div class="menuCard">
+        <h1>SNAKE <span>ARENA</span> 3D</h1>
+        <label class="field">Dein Name
+          <input id="nameInput" maxlength="14" placeholder="Name" autocomplete="off" />
+        </label>
+        <div class="field">Farbe<div id="colors"></div></div>
+        <div class="buttons">
+          <button id="hostBtn" class="primary">Spiel hosten</button>
+          <button id="joinOpenBtn">Beitreten</button>
+          <button id="soloBtn" class="ghost">Alleine üben</button>
+        </div>
+        <div id="joinPanel" class="hidden">
+          <label class="field">Raumcode
+            <input id="codeInput" maxlength="6" placeholder="z. B. K7Q2XB" autocomplete="off" autocapitalize="characters" />
+          </label>
+          <button id="joinBtn" class="primary">Los</button>
+        </div>
+        <p id="menuError" class="error"></p>
+        <p class="hint">Bis zu 8 Spieler. Der Host teilt den Raumcode, andere können jederzeit beitreten.</p>
+      </div>
+    </div>
+
+    <!-- Pausenmenü -->
+    <div id="pause" class="screen hidden">
+      <div class="menuCard">
+        <h2>Menü</h2>
+        <div id="pauseRoom" class="hidden"><span>Raumcode</span><b id="pauseCode"></b></div>
+        <ul id="playerList"></ul>
+        <div class="field">Grafik
+          <div class="seg" id="qualitySeg">
+            <button data-q="low">Niedrig</button><button data-q="medium">Mittel</button><button data-q="high">Hoch</button>
+          </div>
+        </div>
+        <div class="buttons">
+          <button id="resumeBtn" class="primary">Weiterspielen</button>
+          <button id="leaveBtn" class="ghost">Spiel verlassen</button>
+        </div>
+        <p class="hint">Im Mehrspieler läuft das Spiel weiter, während dieses Menü offen ist.</p>
+      </div>
+    </div>
+
+    <div id="loading" class="screen hidden"><div class="spinner"></div><p id="loadingText">Welt wird gebaut …</p></div>
+    <div id="rotate" class="screen"><p>Bitte das Handy quer halten</p></div>
+    <div id="toast" class="hidden"></div>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

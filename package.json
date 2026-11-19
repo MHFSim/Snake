@@ -1,0 +1,25 @@
+{
+  "name": "snake-arena-3d",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc --noEmit && vite build",
+    "build:single": "tsc --noEmit && vite build --mode single",
+    "preview": "vite preview --host",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@babylonjs/core": "9.37.1",
+    "@babylonjs/materials": "9.37.1",
+    "peerjs": "1.5.5"
+  },
+  "devDependencies": {
+    "peer": "^1.0.2",
+    "typescript": "^5",
+    "vite": "^8",
+    "vite-plugin-singlefile": "^2.3.4",
+    "vitest": "*"
+  }
+}
